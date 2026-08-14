@@ -19,8 +19,9 @@ struct Args {
     /// Input document (.dj/.djot, .md/.markdown, .xml, .html/.htm).
     input: PathBuf,
 
-    /// Output file. The extension selects the backend: `.typ` or `.pdf`.
-    /// Omit to write Typst to stdout.
+    /// Output file. The extension selects the backend: `.typ`, `.pdf`, or
+    /// `.html`/`.htm` (experimental — see `html.rs`). Omit to write Typst to
+    /// stdout.
     #[arg(short, long)]
     output: Option<PathBuf>,
 
@@ -118,7 +119,10 @@ fn run() -> Result<()> {
                 "typ" => std::fs::write(path, &rendered.typst)
                     .with_context(|| format!("writing {}", path.display())),
                 "pdf" => write_pdf(path, &rendered.typst),
-                other => bail!("unknown output extension {other:?} (expected .typ or .pdf)"),
+                "html" | "htm" => write_html(path, &rendered.typst),
+                other => bail!(
+                    "unknown output extension {other:?} (expected .typ, .pdf, .html, or .htm)"
+                ),
             }
         }
     }
@@ -134,6 +138,21 @@ fn write_pdf(path: &std::path::Path, typ: &str) -> Result<()> {
 fn write_pdf(_path: &std::path::Path, _typ: &str) -> Result<()> {
     bail!(
         "this build has no PDF backend (built without the `pdf` feature).\n\
+         Emit Typst with `-o out.typ` and compile it separately."
+    )
+}
+
+#[cfg(feature = "html")]
+fn write_html(path: &std::path::Path, typ: &str) -> Result<()> {
+    let html = twig_export::html::compile(typ)?;
+    std::fs::write(path, html).with_context(|| format!("writing {}", path.display()))
+}
+
+#[cfg(not(feature = "html"))]
+fn write_html(_path: &std::path::Path, _typ: &str) -> Result<()> {
+    bail!(
+        "this build has no HTML backend (built without the `html` feature, which is off by \
+         default — Typst's HTML export is experimental).\n\
          Emit Typst with `-o out.typ` and compile it separately."
     )
 }

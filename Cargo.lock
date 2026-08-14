@@ -2420,6 +2420,7 @@ dependencies = [
  "serde_json",
  "twig-doc",
  "typst",
+ "typst-html",
  "typst-kit",
  "typst-layout",
  "typst-pdf",

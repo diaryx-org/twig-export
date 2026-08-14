@@ -103,9 +103,21 @@ fn preamble(out: &mut String, cfg: &Config, resolved: &Resolved) {
     out.push('\n');
 
     if let Some(title) = &d.title {
-        let _ = writeln!(out, "#align(center)[#text(size: 1.8em, weight: \"bold\")[{}]]", escape(title));
+        // A scoped `#set align` rather than an `#align(..)[..]` call: Typst's
+        // HTML backend has no case for the call form and drops its content
+        // entirely (only a warning, no error) rather than just its styling.
+        // `#pad` has the identical trap — see `wrap_block` below.
+        let _ = writeln!(
+            out,
+            "#[\n#set align(center)\n#text(size: 1.8em, weight: \"bold\")[{}]\n]",
+            escape(title)
+        );
         if let Some(author) = &d.author {
-            let _ = writeln!(out, "#align(center)[#text(size: 1.1em)[{}]]", escape(author));
+            let _ = writeln!(
+                out,
+                "#[\n#set align(center)\n#text(size: 1.1em)[{}]\n]",
+                escape(author)
+            );
         }
         out.push('\n');
     }
@@ -403,8 +415,7 @@ fn render_table(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
             let mut body = String::new();
             emit_inlines(&mut body, doc, res, &capnode.children);
             let _ = writeln!(out, "  // caption");
-            let _ = write!(out, ")\n#align(center)[#emph[{}]", body.trim());
-            out.push(']');
+            let _ = write!(out, ")\n#[\n#set align(center)\n#emph[{}]\n]", body.trim());
             return;
         }
     }
@@ -667,7 +678,7 @@ fn wrap_block(content: &str, style: &Style) -> String {
         if let Some(r) = &style.margin_right {
             pad.push(format!("right: {r}"));
         }
-        out = format!("#pad({})[\n{}\n]", pad.join(", "), indent(&out));
+        out = format!("#[\n#set pad({})\n{}\n]", pad.join(", "), indent(&out));
     }
 
     if let Some(l) = &style.leading {
@@ -685,7 +696,7 @@ fn wrap_block(content: &str, style: &Style) -> String {
             Align::Right => "right",
             Align::Justify => unreachable!(),
         };
-        out = format!("#align({a})[\n{}\n]", indent(&out));
+        out = format!("#[\n#set align({a})\n{}\n]", indent(&out));
     }
     out
 }

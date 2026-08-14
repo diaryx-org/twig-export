@@ -140,12 +140,20 @@ else's document.
 ```sh
 cargo build                          # with the in-process Typst compiler
 cargo build --no-default-features    # Typst emission only; no PDF, builds fast
+cargo build --features html          # + experimental HTML export
 cargo test
 ```
 
 The `pdf` feature links the Typst compiler in-process, so a single binary
 produces PDF with no external toolchain. Without it the crate still emits
 `.typ`, which is where all the logic worth testing lives.
+
+The `html` feature does the same through Typst's own HTML backend
+(`-o out.html`), but is opt-in rather than default: Typst calls that backend
+"under active development and incomplete," and it silently drops the
+*content* (not just the styling) of a couple of PDF-oriented constructs — see
+`src/html.rs` for what `typst_emit.rs` already works around and what to check
+before trusting a new one.
 
 ## Status
 

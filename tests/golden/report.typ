@@ -4,8 +4,14 @@
 #set par(leading: 0.65em)
 #set document(title: "Quarterly Field Notes", author: "A. Harris")
 
-#align(center)[#text(size: 1.8em, weight: "bold")[Quarterly Field Notes]]
-#align(center)[#text(size: 1.1em)[A. Harris]]
+#[
+#set align(center)
+#text(size: 1.8em, weight: "bold")[Quarterly Field Notes]
+]
+#[
+#set align(center)
+#text(size: 1.1em)[A. Harris]
+]
 
 #outline(depth: 2)
 
@@ -45,7 +51,8 @@ Special characters that must survive escaping: 100% of \$5 — a\_b, c\*d, \#e.
 - #box(width: 0.62em, height: 0.62em, radius: 1pt, stroke: 0.5pt, baseline: 0.05em) an unchecked task
 - #box(width: 0.62em, height: 0.62em, radius: 1pt, stroke: 0.5pt, fill: black, inset: 1pt, baseline: 0.05em) a checked task
 
-#pad(left: 1.5em)[
+#[
+#set pad(left: 1.5em)
   #emph[
     #text(fill: rgb("#444444"))[
       #quote(block: true)[

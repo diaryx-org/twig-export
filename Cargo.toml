@@ -16,6 +16,10 @@ default = ["pdf"]
 # emits `.typ`, which is where all the interesting logic lives and where every
 # golden test runs.
 pdf = ["dep:typst", "dep:typst-pdf", "dep:typst-kit", "dep:typst-layout"]
+# Typst's HTML export, via `typst-html`. Off by default, unlike `pdf`: Typst
+# itself calls HTML export "under active development and incomplete" and
+# refuses to compile to it without this flag set explicitly. See src/html.rs.
+html = ["dep:typst", "dep:typst-html", "dep:typst-kit"]
 
 [dependencies]
 # The document AST. Published as `twig-doc`; imported as `twig`.
@@ -34,6 +38,7 @@ typst-kit = { version = "0.15", optional = true, features = ["scan-fonts", "embe
 # `PagedDocument` — what `typst::compile` produces and `typst_pdf::pdf` takes —
 # lives here and is not re-exported by the `typst` facade.
 typst-layout = { version = "0.15", optional = true }
+typst-html = { version = "0.15", optional = true }
 fig-schema = "0.1"
 
 [lib]

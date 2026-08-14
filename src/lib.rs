@@ -40,8 +40,14 @@ pub mod schema;
 pub mod style;
 pub mod typst_emit;
 
+#[cfg(any(feature = "pdf", feature = "html"))]
+mod typst_world;
+
 #[cfg(feature = "pdf")]
 pub mod pdf;
+
+#[cfg(feature = "html")]
+pub mod html;
 
 use anyhow::{Context, Result};
 use std::path::Path;
