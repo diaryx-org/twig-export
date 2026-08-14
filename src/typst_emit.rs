@@ -733,6 +733,58 @@ fn quote(s: &str) -> String {
     out
 }
 
+/// One piece of a raw-Typst string as `scan` sees it: literal text to copy
+/// verbatim, or a well-formed `{{...}}` placeholder's trimmed inner text.
+enum Piece<'a> {
+    Literal(&'a str),
+    Placeholder(&'a str),
+}
+
+/// Split `text` into literal spans and placeholder tokens, in order — the one
+/// implementation of the `{{...}}` grammar, shared by [`interpolate`] (which
+/// substitutes placeholders) and [`crate::schema`] (which only needs to see
+/// the tokens, to validate them without a matched node to resolve against).
+///
+/// `{{` with no matching `}}` is not a placeholder: the rest of the string
+/// from that point on is one final literal span, same as any raw Typst that
+/// simply never mentioned the grammar at all.
+fn scan(text: &str) -> Vec<Piece<'_>> {
+    let mut pieces = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("{{") {
+        if start > 0 {
+            pieces.push(Piece::Literal(&rest[..start]));
+        }
+        let after = &rest[start + 2..];
+        match after.find("}}") {
+            Some(end) => {
+                pieces.push(Piece::Placeholder(after[..end].trim()));
+                rest = &after[end + 2..];
+            }
+            None => {
+                pieces.push(Piece::Literal(&rest[start..]));
+                rest = "";
+            }
+        }
+    }
+    if !rest.is_empty() {
+        pieces.push(Piece::Literal(rest));
+    }
+    pieces
+}
+
+/// Every well-formed `{{...}}` placeholder token in `text`, in order — what
+/// `crate::schema`'s syntax check validates.
+pub(crate) fn placeholder_tokens(text: &str) -> Vec<&str> {
+    scan(text)
+        .into_iter()
+        .filter_map(|p| match p {
+            Piece::Placeholder(key) => Some(key),
+            Piece::Literal(_) => None,
+        })
+        .collect()
+}
+
 /// Replace every `{{source.name}}` placeholder in a raw-Typst string with the
 /// value `resolve` returns for it, quoted as a Typst string literal (absent
 /// -> `""`).
@@ -751,23 +803,12 @@ fn quote(s: &str) -> String {
 /// still renders.
 fn interpolate(text: &str, resolve: impl Fn(&str) -> Option<String>) -> String {
     let mut out = String::with_capacity(text.len());
-    let mut rest = text;
-    while let Some(start) = rest.find("{{") {
-        out.push_str(&rest[..start]);
-        let after = &rest[start + 2..];
-        match after.find("}}") {
-            Some(end) => {
-                let value = resolve(after[..end].trim()).unwrap_or_default();
-                out.push_str(&quote(&value));
-                rest = &after[end + 2..];
-            }
-            None => {
-                out.push_str(&rest[start..]);
-                rest = "";
-            }
+    for piece in scan(text) {
+        match piece {
+            Piece::Literal(s) => out.push_str(s),
+            Piece::Placeholder(key) => out.push_str(&quote(&resolve(key).unwrap_or_default())),
         }
     }
-    out.push_str(rest);
     out
 }
 

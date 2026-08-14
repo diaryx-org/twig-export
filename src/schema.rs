@@ -48,6 +48,13 @@ pub enum Constraint {
     Color,
     /// A twig selector.
     Selector,
+    /// A raw-Typst field that `crate::typst_emit::interpolate` runs
+    /// `{{...}}` placeholders through. `node_scoped` distinguishes
+    /// `rule.raw.before`/`after`/`wrap` (resolved per matched node —
+    /// `attr`/`field`/`text`) from `document.raw-preamble`/`title-page`
+    /// (resolved against the document config — `doc`, whose `NAME` half is
+    /// also checked, against [`crate::config::DOC_FIELD_NAMES`]).
+    Interpolation { node_scoped: bool },
 }
 
 impl Validate for Constraint {
@@ -57,8 +64,98 @@ impl Validate for Constraint {
             Constraint::Length => scalar_check(value, check_length),
             Constraint::Color => scalar_check(value, check_color),
             Constraint::Selector => scalar_check(value, check_selector),
+            Constraint::Interpolation { node_scoped } => check_interpolation(*node_scoped, value),
         }
     }
+}
+
+/// The `{{...}}` placeholder keywords a raw-Typst field may use — see
+/// `crate::typst_emit::interpolate_node`/`interpolate_doc`.
+const NODE_PLACEHOLDER_KEYWORDS: &[&str] = &["attr", "field", "text"];
+const DOC_PLACEHOLDER_KEYWORDS: &[&str] = &["doc"];
+
+/// Validate every `{{...}}` placeholder in a raw-Typst string: the keyword
+/// (`attr`/`field`/`text`, or `doc`) against a closed vocabulary — so
+/// `{{atr.count}}` is rejected with "did you mean `attr`?", the same near-miss
+/// machinery `weight`/`align` already get — and, for `doc`, the name half
+/// against [`crate::config::DOC_FIELD_NAMES`] too, since that one IS a fixed,
+/// enumerable set (unlike an attribute or payload field name, which depends
+/// on whatever kind a rule's selector happens to match).
+///
+/// `fig_schema::Validate` returns one `Validation` per field, so a string
+/// with several placeholders reports whichever is worst — same as
+/// `validate_enum` already does for a sequence's elements.
+fn check_interpolation(node_scoped: bool, value: &Value) -> Validation {
+    let Value::Str(s) = value else {
+        return Validation::Ok;
+    };
+    let keywords = if node_scoped {
+        NODE_PLACEHOLDER_KEYWORDS
+    } else {
+        DOC_PLACEHOLDER_KEYWORDS
+    };
+    let keyword_terms: Vec<Term> = keywords.iter().map(|k| Term::value(*k)).collect();
+    let doc_field_terms: Vec<Term> = crate::config::DOC_FIELD_NAMES
+        .iter()
+        .map(|n| Term::value(*n))
+        .collect();
+
+    let mut worst = Validation::Ok;
+    for token in crate::typst_emit::placeholder_tokens(s) {
+        let (keyword, name) = match token.split_once('.') {
+            Some((k, n)) => (k, Some(n)),
+            None => (token, None),
+        };
+
+        let result = validate_enum(&keyword_terms, true, &Value::Str(keyword.into()));
+        let unknown_keyword = result.is_reject();
+        worst = worse(worst, result);
+
+        // A shape/name check only makes sense once the keyword itself is
+        // recognised — an unknown keyword already explains itself.
+        if unknown_keyword {
+            continue;
+        }
+        match (keyword, name) {
+            ("text", Some(_)) => {
+                worst = worse(
+                    worst,
+                    Validation::Reject(fig_schema::Issue::custom(
+                        token,
+                        "`text` takes no name — write `{{text}}`, not `{{text.…}}`",
+                    )),
+                );
+            }
+            (_, None) if keyword != "text" => {
+                worst = worse(
+                    worst,
+                    Validation::Reject(fig_schema::Issue::custom(
+                        token,
+                        format!("`{{{{{keyword}}}}}` needs a name — `{{{{{keyword}.NAME}}}}`"),
+                    )),
+                );
+            }
+            ("doc", Some(name)) => {
+                worst = worse(worst, validate_enum(&doc_field_terms, true, &Value::Str(name.into())));
+            }
+            _ => {}
+        }
+    }
+    worst
+}
+
+/// The more severe of two validation results — `fig_schema` keeps this
+/// ranking private, so a multi-placeholder string tracks it by hand the same
+/// way `validate_enum` already does across a sequence's elements.
+fn worse(a: Validation, b: Validation) -> Validation {
+    fn rank(v: &Validation) -> u8 {
+        match v {
+            Validation::Ok => 0,
+            Validation::Warn(_) => 1,
+            Validation::Reject(_) => 2,
+        }
+    }
+    if rank(&b) > rank(&a) { b } else { a }
 }
 
 /// Apply a string check to a scalar, leaving non-strings to serde's own type
@@ -254,6 +351,16 @@ pub fn schema() -> Schema<Constraint> {
         rule(vec![K("document"), K("leading")], Str, Some(Constraint::Length)),
         rule(vec![K("document"), K("align")], Str, Some(vocab(ALIGNS, true))),
         rule(vec![K("document"), K("toc-depth")], Int, None),
+        rule(
+            vec![K("document"), K("raw-preamble")],
+            Str,
+            Some(Constraint::Interpolation { node_scoped: false }),
+        ),
+        rule(
+            vec![K("document"), K("title-page")],
+            Str,
+            Some(Constraint::Interpolation { node_scoped: false }),
+        ),
         // ── [[rule]] ──────────────────────────────────────────────────────
         rule(vec![K("rule"), Each, K("select")], Str, Some(Constraint::Selector)),
         rule(vec![K("rule"), Each, K("weight")], Str, Some(vocab(WEIGHTS, true))),
@@ -272,6 +379,26 @@ pub fn schema() -> Schema<Constraint> {
         rule(vec![K("rule"), Each, K("indent")], Str, Some(Constraint::Length)),
         rule(vec![K("rule"), Each, K("margin-left")], Str, Some(Constraint::Length)),
         rule(vec![K("rule"), Each, K("margin-right")], Str, Some(Constraint::Length)),
+        // ── [rule.raw] ────────────────────────────────────────────────────
+        // Not `before`/`after`/`wrap`'s sibling `preamble`: that field is
+        // never interpolated (it is emitted once globally, not per matched
+        // node — see `crate::typst_emit::emit`), so it has no placeholder
+        // grammar to validate.
+        rule(
+            vec![K("rule"), Each, K("raw"), K("before")],
+            Str,
+            Some(Constraint::Interpolation { node_scoped: true }),
+        ),
+        rule(
+            vec![K("rule"), Each, K("raw"), K("after")],
+            Str,
+            Some(Constraint::Interpolation { node_scoped: true }),
+        ),
+        rule(
+            vec![K("rule"), Each, K("raw"), K("wrap")],
+            Str,
+            Some(Constraint::Interpolation { node_scoped: true }),
+        ),
         // ── [rule.box] ────────────────────────────────────────────────────
         rule(vec![K("rule"), Each, K("box"), K("fill")], Str, Some(Constraint::Color)),
         rule(vec![K("rule"), Each, K("box"), K("stroke")], Str, Some(Constraint::Color)),
@@ -493,5 +620,100 @@ mod tests {
                 .unwrap();
         let f = findings(&text);
         assert!(f.is_empty(), "the example config must validate cleanly: {f:?}");
+    }
+
+    /// The other shipped example is the one that actually uses `{{...}}`
+    /// placeholders — `report.toml` alone would not exercise this check at
+    /// all.
+    #[test]
+    fn the_folklore_example_config_is_clean() {
+        let text = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/examples/folklore-book.toml"
+        ))
+        .unwrap();
+        let f = findings(&text);
+        assert!(f.is_empty(), "the example config must validate cleanly: {f:?}");
+    }
+
+    #[test]
+    fn a_misspelled_placeholder_keyword_is_rejected_with_a_suggestion() {
+        let f = findings("[[rule]]\nselect = \"heading\"\nraw.before = \"#f({{atr.count}})\"\n");
+        assert_eq!(f.len(), 1, "{f:?}");
+        assert_eq!(f[0].path, "rule[0].raw.before");
+        assert!(f[0].validation.is_reject());
+        assert_eq!(f[0].validation.issue().unwrap().suggestion.as_deref(), Some("attr"));
+    }
+
+    #[test]
+    fn attr_field_and_text_placeholders_are_all_accepted() {
+        let f = findings(
+            "[[rule]]\nselect = \"heading\"\n\
+             raw.before = \"#f({{attr.count}}, {{field.level}}, {{text}})\"\n",
+        );
+        assert!(f.is_empty(), "{f:?}");
+    }
+
+    #[test]
+    fn text_with_a_name_is_rejected() {
+        let f = findings("[[rule]]\nselect = \"heading\"\nraw.before = \"{{text.foo}}\"\n");
+        assert_eq!(f.len(), 1, "{f:?}");
+        assert!(f[0].validation.is_reject());
+    }
+
+    #[test]
+    fn a_keyword_without_a_name_is_rejected() {
+        let f = findings("[[rule]]\nselect = \"heading\"\nraw.before = \"{{attr}}\"\n");
+        assert_eq!(f.len(), 1, "{f:?}");
+        assert!(f[0].validation.is_reject());
+    }
+
+    /// `doc` is closed to `attr`/`field`/`text` too: those resolve per matched
+    /// node, and a document-level raw field (`raw-preamble`/`title-page`) has
+    /// no matched node to resolve them against.
+    #[test]
+    fn attr_is_rejected_in_a_document_level_raw_field() {
+        let f = findings("[document]\nraw-preamble = \"{{attr.count}}\"\n");
+        assert_eq!(f.len(), 1, "{f:?}");
+        assert!(f[0].validation.is_reject());
+        assert_eq!(f[0].validation.issue().unwrap().suggestion.as_deref(), None);
+    }
+
+    #[test]
+    fn doc_is_rejected_in_a_node_scoped_raw_field() {
+        let f = findings("[[rule]]\nselect = \"heading\"\nraw.wrap = \"{{doc.title}}\"\n");
+        assert_eq!(f.len(), 1, "{f:?}");
+        assert!(f[0].validation.is_reject());
+    }
+
+    /// The `doc.NAME` half is also a closed, enumerable vocabulary — unlike
+    /// `attr`/`field`, whose names depend on whatever kind a selector
+    /// happens to match, `Document`'s fields are fixed.
+    #[test]
+    fn an_unknown_doc_field_name_is_rejected_with_a_suggestion() {
+        let f = findings("[document]\ntitle-page = \"{{doc.titel}}\"\n");
+        assert_eq!(f.len(), 1, "{f:?}");
+        assert!(f[0].validation.is_reject());
+        assert_eq!(f[0].validation.issue().unwrap().suggestion.as_deref(), Some("title"));
+    }
+
+    /// `raw.preamble` is never interpolated (see `crate::typst_emit::emit`),
+    /// so it carries no placeholder grammar to validate — `{{...}}` there is
+    /// just literal text as far as the schema is concerned.
+    #[test]
+    fn raw_preamble_is_not_checked_for_placeholders() {
+        let f = findings("[[rule]]\nselect = \"heading\"\nraw.preamble = \"{{nonsense}}\"\n");
+        assert!(f.is_empty(), "{f:?}");
+    }
+
+    /// The worst placeholder in a field wins, same as `validate_enum` already
+    /// does across a sequence's elements.
+    #[test]
+    fn the_worst_of_several_placeholders_in_one_field_is_reported() {
+        let f = findings(
+            "[[rule]]\nselect = \"heading\"\nraw.before = \"{{attr.count}} {{atr.other}}\"\n",
+        );
+        assert_eq!(f.len(), 1, "{f:?}");
+        assert!(f[0].validation.is_reject());
     }
 }

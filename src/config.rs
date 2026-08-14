@@ -168,6 +168,22 @@ impl Document {
     }
 }
 
+/// Every name [`Document::field_as_str`] recognises — the closed vocabulary
+/// `crate::schema` checks a `{{doc.NAME}}` placeholder's `NAME` against, kept
+/// in sync with the match arms above by `tests/schema.rs`.
+pub const DOC_FIELD_NAMES: &[&str] = &[
+    "paper",
+    "margin",
+    "font",
+    "size",
+    "leading",
+    "lang",
+    "title",
+    "author",
+    "page-numbering",
+    "toc-depth",
+];
+
 /// One selector → style binding.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
