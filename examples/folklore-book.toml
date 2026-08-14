@@ -1,0 +1,90 @@
+# A twig-export config that delegates layout to a Typst Universe template
+# (`@preview/folklore`, https://typst.app/universe/package/folklore) instead
+# of twig-export's own [document] preamble. Render with:
+#
+#   twig-export examples/folklore-book.md -c examples/folklore-book.toml \
+#     --directives -o book.pdf
+#
+# `--directives` is required: `:::name` / `::name` are twig's generic
+# directive syntax, off by default (mirrors `twig --directives`).
+
+[document]
+# Deliberately blank: paper size, margins, fonts — all of it is the
+# template's job now, set inside `setup.with(...)` below rather than here.
+#
+# `title`/`author` ARE bound below, same as any other config — twig-export
+# still emits `#set document(title: ..., author: ...)` from them, same as
+# always. `title-page` is cleared instead of left at its default: the
+# template draws its own title page, and there is no separate "suppress"
+# knob for that — `title-page` is a normal field like any other, and this is
+# what setting it to nothing looks like.
+title-page = ""
+from-metadata = { title = "title", author = "author" }
+
+# `work-title`/`work-author` are hardcoded here, not read back from
+# `document.title`/`.author` via `context` — that was tried first and looks
+# like it should work (an isolated `#set document(title: context
+# document.title)` compiles fine), but folklore's own `lib.typ` does `set
+# document(title: work-title, ...)` AND reuses that same `work-title` inside
+# its per-page running header. Feed it `context document.title` and Typst
+# ends up resolving `document.title` in terms of itself on every page —
+# "maximum show rule depth exceeded". So today, keeping these two lines in
+# sync with the frontmatter above is a human's job. Making the ALREADY
+# RESOLVED value (not a live Typst reference to it) reach here is the "one
+# rule per value" problem's bigger sibling — Rust-side interpolation, not a
+# Typst-side trick, is probably the real fix.
+raw-preamble = '''
+#import "@preview/folklore:0.2.0": setup, author-notes, major-break
+
+#show: setup.with(
+  work-title: [Example Book With Some Long Title],
+  work-author: [Ex. Author],
+  copyright-page: [
+    Made with love---as per yuʒ.
+  ],
+  blank-pages-after-toc: 1,
+  preface: [
+    This is a book! It's made for the physical page, so view with even
+    spreads in your PDF viewer of choice. Each page is half-letter sized by
+    default.
+
+    I hope you like it! :3
+  ],
+)
+'''
+
+# `:::author-notes[...]:::` -> `#author-notes[...]`. Content-bearing, so
+# `raw.wrap` (which wraps the node's rendered body) is the right hook, not
+# `raw.before`/`after`.
+[[rule]]
+select = "container[name=author-notes]"
+raw.wrap = "author-notes"
+
+# `::major-break` -> `#major-break`. A leaf directive carries no body, so
+# there is nothing to wrap — `raw.before` just injects the reference.
+# `major-break` is content, not a function, so no call parens.
+[[rule]]
+select = "container[name=major-break]"
+raw.before = "#major-break"
+
+# `::lorem{count=150}` -> `#lorem(150)`. One rule per count actually used in
+# the document, because `raw.before` is a static string: the config can
+# match on the `count` attribute but cannot read its value back out and
+# splice it into the injected Typst. That is the sharpest limit of today's
+# escape hatch — it says WHERE to inject, not WHAT value FROM the document to
+# inject.
+[[rule]]
+select = "container[name=lorem][count=100]"
+raw.before = "#lorem(100)"
+
+[[rule]]
+select = "container[name=lorem][count=150]"
+raw.before = "#lorem(150)"
+
+[[rule]]
+select = "container[name=lorem][count=180]"
+raw.before = "#lorem(180)"
+
+[[rule]]
+select = "container[name=lorem][count=200]"
+raw.before = "#lorem(200)"
