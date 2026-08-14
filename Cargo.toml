@@ -1,0 +1,45 @@
+[package]
+name = "twig-export"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "Render Twig document ASTs to Typst and PDF, with a configurable directive/metadata style map."
+repository = "https://github.com/diaryx-org/twig-export"
+# `twig-doc` needs 1.85 (edition 2024 + offset_of!); typst 0.15 needs 1.92.
+# Track the higher of the two.
+rust-version = "1.92"
+
+[features]
+default = ["pdf"]
+# Link the Typst compiler in-process so `-o out.pdf` needs no external
+# toolchain. Off by default in CI's fast lane: without it the crate still
+# emits `.typ`, which is where all the interesting logic lives and where every
+# golden test runs.
+pdf = ["dep:typst", "dep:typst-pdf", "dep:typst-kit", "dep:typst-layout"]
+
+[dependencies]
+# The document AST. Published as `twig-doc`; imported as `twig`.
+twig-doc = "2.8"
+# Parses the config file AND the frontmatter. `metadata.lang` names exactly the
+# languages fig speaks (yaml/toml/json/fig), so one parser covers both.
+fig = { version = "3.0", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+
+typst = { version = "0.15", optional = true }
+typst-pdf = { version = "0.15", optional = true }
+typst-kit = { version = "0.15", optional = true, features = ["scan-fonts", "embedded-fonts"] }
+# `PagedDocument` — what `typst::compile` produces and `typst_pdf::pdf` takes —
+# lives here and is not re-exported by the `typst` facade.
+typst-layout = { version = "0.15", optional = true }
+fig-schema = "0.1"
+
+[lib]
+name = "twig_export"
+path = "src/lib.rs"
+
+[[bin]]
+name = "twig-export"
+path = "src/main.rs"
