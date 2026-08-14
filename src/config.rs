@@ -143,6 +143,31 @@ impl Default for Document {
     }
 }
 
+impl Document {
+    /// Read a field back out by the same name `[document.from-metadata]`
+    /// writes into it — the read half of [`crate::meta::apply_metadata`].
+    /// This is what `{{doc.NAME}}` resolves against in `raw-preamble` /
+    /// `title-page` (see `crate::typst_emit::interpolate_doc`), so a template
+    /// parameter can be sourced from whatever the frontmatter bound, without
+    /// going through Typst's own `context` (which does not compose safely
+    /// with a template that re-derives its own metadata from that value).
+    pub fn field_as_str(&self, name: &str) -> Option<String> {
+        Some(match name {
+            "paper" => self.paper.clone()?,
+            "margin" => self.margin.clone()?,
+            "font" => self.font.clone()?,
+            "size" => self.size.clone()?,
+            "leading" => self.leading.clone()?,
+            "lang" => self.lang.clone()?,
+            "title" => self.title.clone()?,
+            "author" => self.author.clone()?,
+            "page-numbering" => self.page_numbering.clone()?,
+            "toc-depth" => self.toc_depth?.to_string(),
+            _ => return None,
+        })
+    }
+}
+
 /// One selector → style binding.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]

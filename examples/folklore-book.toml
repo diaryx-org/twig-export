@@ -21,24 +21,25 @@
 title-page = ""
 from-metadata = { title = "title", author = "author" }
 
-# `work-title`/`work-author` are hardcoded here, not read back from
-# `document.title`/`.author` via `context` — that was tried first and looks
-# like it should work (an isolated `#set document(title: context
-# document.title)` compiles fine), but folklore's own `lib.typ` does `set
+# `work-title`/`work-author` are `{{doc.title}}`/`{{doc.author}}` —
+# interpolated by twig-export itself (see `interpolate_doc` in
+# `src/typst_emit.rs`) against the SAME resolved `title`/`author` that
+# `#set document(...)` used, BEFORE this text ever reaches Typst. Reading them
+# back via Typst's own `context document.title` was tried first and looks
+# like it should work in isolation, but folklore's `lib.typ` does `set
 # document(title: work-title, ...)` AND reuses that same `work-title` inside
-# its per-page running header. Feed it `context document.title` and Typst
-# ends up resolving `document.title` in terms of itself on every page —
-# "maximum show rule depth exceeded". So today, keeping these two lines in
-# sync with the frontmatter above is a human's job. Making the ALREADY
-# RESOLVED value (not a live Typst reference to it) reach here is the "one
-# rule per value" problem's bigger sibling — Rust-side interpolation, not a
-# Typst-side trick, is probably the real fix.
+# its per-page running header — feed it a live `context` reference and Typst
+# ends up resolving `document.title` in terms of itself on every page,
+# "maximum show rule depth exceeded". Interpolating the plain resolved string
+# here sidesteps that entirely: by the time Typst sees this text, `{{doc.title}}`
+# is just `"Example Book With Some Long Title"`, no different from typing it
+# by hand.
 raw-preamble = '''
 #import "@preview/folklore:0.2.0": setup, author-notes, major-break
 
 #show: setup.with(
-  work-title: [Example Book With Some Long Title],
-  work-author: [Ex. Author],
+  work-title: {{doc.title}},
+  work-author: {{doc.author}},
   copyright-page: [
     Made with love---as per yuʒ.
   ],
@@ -67,24 +68,12 @@ raw.wrap = "author-notes"
 select = "container[name=major-break]"
 raw.before = "#major-break"
 
-# `::lorem{count=150}` -> `#lorem(150)`. One rule per count actually used in
-# the document, because `raw.before` is a static string: the config can
-# match on the `count` attribute but cannot read its value back out and
-# splice it into the injected Typst. That is the sharpest limit of today's
-# escape hatch — it says WHERE to inject, not WHAT value FROM the document to
-# inject.
+# `::lorem{count=150}` -> `#lorem(int("150"))`. ONE rule, not one per count:
+# `{{attr.count}}` reads the matched node's OWN `count` attribute, whatever it
+# is, and `interpolate` always substitutes it as a quoted Typst string — so
+# `int(...)` converts it to the number `#lorem` wants. This used to be four
+# rules, one per literal count in the document; a count this config never
+# anticipated now renders instead of silently matching nothing.
 [[rule]]
-select = "container[name=lorem][count=100]"
-raw.before = "#lorem(100)"
-
-[[rule]]
-select = "container[name=lorem][count=150]"
-raw.before = "#lorem(150)"
-
-[[rule]]
-select = "container[name=lorem][count=180]"
-raw.before = "#lorem(180)"
-
-[[rule]]
-select = "container[name=lorem][count=200]"
-raw.before = "#lorem(200)"
+select = "container[name=lorem]"
+raw.before = "#lorem(int({{attr.count}}))"

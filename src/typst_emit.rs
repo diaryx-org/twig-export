@@ -18,7 +18,7 @@
 
 use std::fmt::Write as _;
 
-use crate::config::{Config, weight_str};
+use crate::config::{Config, Document, weight_str};
 use crate::doc::{Doc, Idx};
 use crate::resolve::Resolved;
 use crate::style::{Align, Break, Style};
@@ -92,7 +92,7 @@ fn preamble(out: &mut String, cfg: &Config, resolved: &Resolved) {
     }
 
     if let Some(raw) = &d.raw_preamble {
-        out.push_str(raw);
+        out.push_str(&interpolate_doc(raw, d));
         out.push('\n');
     }
     for frag in &resolved.preamble {
@@ -108,7 +108,7 @@ fn preamble(out: &mut String, cfg: &Config, resolved: &Resolved) {
     // anything is drawn, and how, is entirely up to what this field holds;
     // see `Document::title_page`.
     if let Some(title_page) = &d.title_page {
-        out.push_str(title_page);
+        out.push_str(&interpolate_doc(title_page, d));
         out.push_str("\n\n");
     }
 
@@ -128,7 +128,7 @@ fn emit_block(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
     if let Some(raw) = &style.raw
         && let Some(before) = &raw.before
     {
-        out.push_str(before);
+        out.push_str(&interpolate_node(before, doc, idx));
         out.push('\n');
     }
     if style.break_before == Some(Break::Page) {
@@ -140,7 +140,7 @@ fn emit_block(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
     let mut inner = String::new();
     render_block_content(&mut inner, doc, res, idx, style);
 
-    let wrapped = wrap_block(&inner, style);
+    let wrapped = wrap_block(&inner, style, doc, idx);
     out.push_str(&wrapped);
     if !wrapped.ends_with('\n') {
         out.push('\n');
@@ -155,7 +155,7 @@ fn emit_block(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
     if let Some(raw) = &style.raw
         && let Some(after) = &raw.after
     {
-        out.push_str(after);
+        out.push_str(&interpolate_node(after, doc, idx));
         out.push('\n');
     }
 }
@@ -607,7 +607,7 @@ fn text_args(style: &Style) -> Vec<String> {
 }
 
 /// Wrap block content in the block-level properties a style sets.
-fn wrap_block(content: &str, style: &Style) -> String {
+fn wrap_block(content: &str, style: &Style, doc: &Doc, idx: Idx) -> String {
     let content = content.trim_end();
     if content.is_empty() {
         return String::new();
@@ -617,6 +617,7 @@ fn wrap_block(content: &str, style: &Style) -> String {
     if let Some(raw) = &style.raw
         && let Some(wrap) = &raw.wrap
     {
+        let wrap = interpolate_node(wrap, doc, idx);
         out = format!("#{wrap}[\n{}\n]", indent(&out));
     }
 
@@ -732,6 +733,72 @@ fn quote(s: &str) -> String {
     out
 }
 
+/// Replace every `{{source.name}}` placeholder in a raw-Typst string with the
+/// value `resolve` returns for it, quoted as a Typst string literal (absent
+/// -> `""`).
+///
+/// Always quoting is the whole safety property: this is the one place
+/// document-derived text (an attribute value, a bound frontmatter field)
+/// reaches raw Typst source rather than markup `escape`d text, so a crafted
+/// value cannot close the literal and inject Typst of its own. A rule that
+/// wants a non-string value asks Typst to convert it — `#lorem(int({{attr.count}}))`
+/// — rather than this function ever splicing something unquoted.
+///
+/// Not a parser: `{{` with no matching `}}` is left as literal text, and an
+/// empty/unmatched key resolves to `""` rather than erroring, matching how an
+/// unfired `from-metadata` binding is reported (`--explain`) rather than
+/// rejected — a placeholder that never matches any node is a config that
+/// still renders.
+fn interpolate(text: &str, resolve: impl Fn(&str) -> Option<String>) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find("{{") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 2..];
+        match after.find("}}") {
+            Some(end) => {
+                let value = resolve(after[..end].trim()).unwrap_or_default();
+                out.push_str(&quote(&value));
+                rest = &after[end + 2..];
+            }
+            None => {
+                out.push_str(&rest[start..]);
+                rest = "";
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Interpolate against one matched node: `{{attr.NAME}}` (a directive/HTML
+/// attribute), `{{field.NAME}}` (a typed payload field — `level`,
+/// `destination`, `lang`, …), `{{text}}` (concatenated descendant text).
+fn interpolate_node(text: &str, doc: &Doc, idx: Idx) -> String {
+    interpolate(text, |key| {
+        if key == "text" {
+            return Some(doc.text_of(idx));
+        }
+        let n = doc.node(idx);
+        let (source, name) = key.split_once('.')?;
+        match source {
+            "attr" => n.attr(name).flatten().map(str::to_string),
+            "field" => n
+                .str_field(name)
+                .map(str::to_string)
+                .or_else(|| n.int_field(name).map(|i| i.to_string()))
+                .or_else(|| n.bool_field(name).map(|b| b.to_string())),
+            _ => None,
+        }
+    })
+}
+
+/// Interpolate against the resolved document config: `{{doc.NAME}}`, the same
+/// names `[document.from-metadata]` binds into — see `Document::field_as_str`.
+fn interpolate_doc(text: &str, d: &Document) -> String {
+    interpolate(text, |key| d.field_as_str(key.strip_prefix("doc.")?))
+}
+
 /// A colour literal. Hex becomes `rgb("#…")`; a bare name passes through as a
 /// Typst colour identifier.
 fn color(c: &str) -> String {
@@ -833,5 +900,37 @@ mod tests {
     #[test]
     fn continuation_lines_stay_inside_their_list_item() {
         assert_eq!(indent_continuation("first\nsecond\n"), "first\n  second");
+    }
+
+    #[test]
+    fn interpolate_substitutes_a_quoted_value() {
+        let out = interpolate("#lorem(int({{attr.count}}))", |k| {
+            assert_eq!(k, "attr.count");
+            Some("150".into())
+        });
+        assert_eq!(out, "#lorem(int(\"150\"))");
+    }
+
+    #[test]
+    fn interpolate_leaves_text_without_placeholders_untouched() {
+        assert_eq!(interpolate("#major-break", |_| None), "#major-break");
+    }
+
+    #[test]
+    fn interpolate_resolves_an_unmatched_key_to_an_empty_string() {
+        assert_eq!(interpolate("[{{attr.missing}}]", |_| None), "[\"\"]");
+    }
+
+    #[test]
+    fn interpolate_leaves_an_unterminated_placeholder_as_literal_text() {
+        assert_eq!(interpolate("a {{b", |_| Some("x".into())), "a {{b");
+    }
+
+    /// The safety property the whole design leans on: a resolved value that
+    /// itself contains a `"` cannot close the Typst string literal early.
+    #[test]
+    fn interpolate_always_quotes_so_a_value_cannot_break_out_of_the_literal() {
+        let out = interpolate("#f({{x}})", |_| Some("a\" + read(\"/etc/passwd".into()));
+        assert_eq!(out, "#f(\"a\\\" + read(\\\"/etc/passwd\")");
     }
 }
