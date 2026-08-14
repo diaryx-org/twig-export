@@ -10,7 +10,7 @@ repository = "https://github.com/diaryx-org/twig-export"
 rust-version = "1.92"
 
 [features]
-default = ["pdf"]
+default = ["pdf", "network"]
 # Link the Typst compiler in-process so `-o out.pdf` needs no external
 # toolchain. Off by default in CI's fast lane: without it the crate still
 # emits `.typ`, which is where all the interesting logic lives and where every
@@ -20,6 +20,12 @@ pdf = ["dep:typst", "dep:typst-pdf", "dep:typst-kit", "dep:typst-layout"]
 # itself calls HTML export "under active development and incomplete" and
 # refuses to compile to it without this flag set explicitly. See src/html.rs.
 html = ["dep:typst", "dep:typst-html", "dep:typst-kit"]
+# Resolve `@preview/...` imports — Typst Universe templates and libraries —
+# the same way typst-cli does: local package data/cache directories first,
+# then a download from packages.typst.org cached under the system cache dir.
+# Only takes effect alongside `pdf` and/or `html`, since those are what link a
+# `World` at all; `network` on its own changes nothing.
+network = ["dep:typst-kit", "typst-kit/system-files", "typst-kit/system-downloader"]
 
 [dependencies]
 # The document AST. Published as `twig-doc`; imported as `twig`.

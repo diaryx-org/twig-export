@@ -5,8 +5,19 @@
 //! which in-development [`Features`] the library is built with (HTML export
 //! requires `Feature::Html`, PDF requires none) and which document type they
 //! ask `typst::compile` for.
+//!
+//! ── Packages are resolved the same way typst-cli does ───────────────────────
+//! With the `network` feature (on by default), `@preview/...` imports —
+//! Typst Universe templates and libraries — go through `typst-kit`'s
+//! `SystemFiles`: local package data/cache directories are checked first,
+//! then a download from packages.typst.org is cached under the system cache
+//! dir (`~/.cache/typst/packages` and platform equivalents). Without the
+//! feature, only project-relative paths resolve and a package import fails
+//! with "not found" — the crate still emits and compiles plain `.typ`.
 
-use typst::diag::{FileError, FileResult};
+#[cfg(not(feature = "network"))]
+use typst::diag::FileError;
+use typst::diag::FileResult;
 use typst::foundations::{Bytes, Datetime, Duration};
 use typst::syntax::{FileId, RootedPath, Source, VirtualPath, VirtualRoot};
 use typst::text::{Font, FontBook};
@@ -14,10 +25,19 @@ use typst::utils::LazyHash;
 use typst::{Features, Library, LibraryExt, World};
 use typst_kit::fonts::FontStore;
 
+#[cfg(feature = "network")]
+use typst_kit::{
+    downloader::SystemDownloader,
+    files::{FileStore, FsRoot, SystemFiles},
+    packages::SystemPackages,
+};
+
 pub(crate) struct ExportWorld {
     library: LazyHash<Library>,
     fonts: FontStore,
     main: Source,
+    #[cfg(feature = "network")]
+    files: FileStore<SystemFiles>,
 }
 
 impl ExportWorld {
@@ -35,10 +55,21 @@ impl ExportWorld {
 
         let library = Library::builder().with_features(features).build();
 
+        #[cfg(feature = "network")]
+        let files = FileStore::new(SystemFiles::new(
+            FsRoot::new(std::env::current_dir().unwrap_or_else(|_| ".".into())),
+            SystemPackages::new(SystemDownloader::new(concat!(
+                "twig-export/",
+                env!("CARGO_PKG_VERSION")
+            ))),
+        ));
+
         ExportWorld {
             library: LazyHash::new(library),
             fonts,
             main: Source::new(id, typ.into()),
+            #[cfg(feature = "network")]
+            files,
         }
     }
 
@@ -62,6 +93,16 @@ impl World for ExportWorld {
         self.main.id()
     }
 
+    #[cfg(feature = "network")]
+    fn source(&self, id: FileId) -> FileResult<Source> {
+        if id == self.main.id() {
+            Ok(self.main.clone())
+        } else {
+            self.files.source(id)
+        }
+    }
+
+    #[cfg(not(feature = "network"))]
     fn source(&self, id: FileId) -> FileResult<Source> {
         if id == self.main.id() {
             Ok(self.main.clone())
@@ -70,9 +111,16 @@ impl World for ExportWorld {
         }
     }
 
-    /// We emit a self-contained document with no `#include`, so the only files
-    /// Typst asks for are the images a document links to. Resolve those
-    /// against the working directory.
+    /// Besides `#import`s of `@preview/...` packages (only resolved with the
+    /// `network` feature), the only files Typst asks for are the images a
+    /// document links to and any files a package itself reads. Both resolve
+    /// against the working directory / the package's own root.
+    #[cfg(feature = "network")]
+    fn file(&self, id: FileId) -> FileResult<Bytes> {
+        self.files.file(id)
+    }
+
+    #[cfg(not(feature = "network"))]
     fn file(&self, id: FileId) -> FileResult<Bytes> {
         let path = std::path::Path::new(id.vpath().get_without_slash());
         std::fs::read(path)
