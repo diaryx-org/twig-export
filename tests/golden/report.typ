@@ -4,13 +4,17 @@
 #set par(leading: 0.65em)
 #set document(title: "Quarterly Field Notes", author: "A. Harris")
 
-#[
-#set align(center)
-#text(size: 1.8em, weight: "bold")[Quarterly Field Notes]
-]
-#[
-#set align(center)
-#text(size: 1.1em)[A. Harris]
+#context if document.title != none [
+  #[
+  #set align(center)
+  #text(size: 1.8em, weight: "bold")[#document.title]
+  ]
+  #if document.author.len() > 0 [
+    #[
+    #set align(center)
+    #text(size: 1.1em)[#document.author.join(", ")]
+    ]
+  ]
 ]
 
 #outline(depth: 2)

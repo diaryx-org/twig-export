@@ -102,24 +102,14 @@ fn preamble(out: &mut String, cfg: &Config, resolved: &Resolved) {
 
     out.push('\n');
 
-    if let Some(title) = &d.title {
-        // A scoped `#set align` rather than an `#align(..)[..]` call: Typst's
-        // HTML backend has no case for the call form and drops its content
-        // entirely (only a warning, no error) rather than just its styling.
-        // `#pad` has the identical trap — see `wrap_block` below.
-        let _ = writeln!(
-            out,
-            "#[\n#set align(center)\n#text(size: 1.8em, weight: \"bold\")[{}]\n]",
-            escape(title)
-        );
-        if let Some(author) = &d.author {
-            let _ = writeln!(
-                out,
-                "#[\n#set align(center)\n#text(size: 1.1em)[{}]\n]",
-                escape(author)
-            );
-        }
-        out.push('\n');
+    // Not gated on `d.title.is_some()` here — the default template's own
+    // `#context if document.title != none [...]` does that check in Typst,
+    // against whatever `#set document(...)` above actually set. Whether
+    // anything is drawn, and how, is entirely up to what this field holds;
+    // see `Document::title_page`.
+    if let Some(title_page) = &d.title_page {
+        out.push_str(title_page);
+        out.push_str("\n\n");
     }
 
     if let Some(depth) = d.toc_depth {

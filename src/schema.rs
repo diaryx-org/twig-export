@@ -203,6 +203,7 @@ pub const DOCUMENT_KEYS: &[&str] = &[
     "page-numbering",
     "toc-depth",
     "raw-preamble",
+    "title-page",
     "from-metadata",
 ];
 

@@ -75,6 +75,18 @@ pub struct Document {
     /// Typst emitted verbatim at the top of the preamble, after everything
     /// above. The document-level twin of [`crate::style::RawTypst`].
     pub raw_preamble: Option<String>,
+    /// Typst emitted verbatim right after the preamble, before the body —
+    /// where the title/author block goes. The default reproduces the classic
+    /// centred title and author (reading them back via `context
+    /// document.title`/`.author`, which is why a static default can still
+    /// show per-document values: see `Default for Document`).
+    ///
+    /// This is deliberately just another raw-Typst field rather than a
+    /// hardcoded Rust behaviour keyed off `title`/`author` being `Some`. A
+    /// Typst Universe template that draws its own title page is not a
+    /// special case to suppress — it is what you get by setting
+    /// `title-page = ""` (or writing your own) like any other override.
+    pub title_page: Option<String>,
 
     /// Bind frontmatter keys to the fields above: `paper = "pdf-paper"` means
     /// "if the document's metadata has a `pdf-paper` key, it overrides
@@ -87,6 +99,28 @@ pub struct Document {
     /// inert rather than accidentally meaningful.
     pub from_metadata: BTreeMap<String, String>,
 }
+
+/// The stock title/author block. `context` reads `document.title`/`.author`
+/// back from the `#set document(...)` this crate already emits, so this
+/// static string still shows per-document values — see [`Document::title_page`].
+// `document.title` reads back as `str` or `none`, but `document.author`
+// ALWAYS reads back as an array — even after `#set document(author: "solo
+// name")` — and defaults to `()`, not `none`, when never set. Hence `.len() >
+// 0` rather than `!= none`, and `.join(", ")` for the (usual) single-author
+// case as much as the multi-author one.
+const DEFAULT_TITLE_PAGE: &str = "\
+#context if document.title != none [
+  #[
+  #set align(center)
+  #text(size: 1.8em, weight: \"bold\")[#document.title]
+  ]
+  #if document.author.len() > 0 [
+    #[
+    #set align(center)
+    #text(size: 1.1em)[#document.author.join(\", \")]
+    ]
+  ]
+]";
 
 impl Default for Document {
     fn default() -> Self {
@@ -103,6 +137,7 @@ impl Default for Document {
             page_numbering: None,
             toc_depth: None,
             raw_preamble: None,
+            title_page: Some(DEFAULT_TITLE_PAGE.into()),
             from_metadata: BTreeMap::new(),
         }
     }
