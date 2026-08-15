@@ -58,7 +58,7 @@ Ref[^1].
 [^1]: Footnote body.
 ";
     let (_, doc) = parse(src);
-    assert_eq!(doc.node(doc.root()).kind, "doc");
+    assert_eq!(doc.node(doc.root()).kind, twig::Kind::Doc);
     // If ingest returned at all, the lockstep check passed on every node.
     assert!(doc.nodes.len() > 40, "got {} nodes", doc.nodes.len());
 }
@@ -73,7 +73,7 @@ fn detached_footnote_definitions_are_ingested_with_their_label() {
     let fnote = doc
         .nodes
         .iter()
-        .find(|n| n.kind == "footnote")
+        .find(|n| n.kind == twig::Kind::Footnote)
         .expect("the footnote definition must be ingested despite being detached");
 
     assert_eq!(
@@ -92,12 +92,12 @@ fn json_only_payloads_survive_ingest() {
     let (_, doc) = parse(
         "---\ntitle: T\n---\n\n```zig\nx\n```\n\n3) three\n\n- [x] done\n",
     );
-    let get = |kind: &str| doc.nodes.iter().find(|n| n.kind == kind).unwrap();
+    let get = |kind: twig::Kind| doc.nodes.iter().find(|n| n.kind == kind).unwrap();
 
-    assert_eq!(get("metadata").str_field("lang"), Some("yaml"));
-    assert_eq!(get("code_block").str_field("lang"), Some("zig"));
-    assert_eq!(get("ordered_list").int_field("start"), Some(3));
-    assert_eq!(get("task_list_item").bool_field("checked"), Some(true));
+    assert_eq!(get(twig::Kind::Metadata).str_field("lang"), Some("yaml"));
+    assert_eq!(get(twig::Kind::CodeBlock).str_field("lang"), Some("zig"));
+    assert_eq!(get(twig::Kind::OrderedList).int_field("start"), Some(3));
+    assert_eq!(get(twig::Kind::TaskListItem).bool_field("checked"), Some(true));
 }
 
 /// Rules are matched by twig's OWN selector engine, so the config surface and
@@ -130,7 +130,7 @@ fn selector_matches_map_back_to_ingested_nodes() {
     let warn = doc
         .nodes
         .iter()
-        .position(|n| n.kind == "container" && n.has_class("warn"))
+        .position(|n| n.kind == twig::Kind::Container && n.has_class("warn"))
         .unwrap();
     assert!(resolved.is_hidden(&doc, warn));
 

@@ -67,7 +67,7 @@ pub type NodeId = u32;
 pub struct Node {
     /// The published kind name (`"heading"`, `"container"`, `"str"`, …) — the
     /// same flat vocabulary `twig query` selectors match against.
-    pub kind: String,
+    pub kind: twig::Kind,
     pub node_id: NodeId,
     pub parent: Option<Idx>,
     pub children: Vec<Idx>,
@@ -150,7 +150,7 @@ impl Doc {
     /// exactly as the fence tag was written — which is what tells [`crate::meta`]
     /// which fig parser to hand the text to.
     pub fn metadata(&self) -> Option<(&str, &str)> {
-        self.nodes.iter().find(|n| n.kind == "metadata").and_then(|n| {
+        self.nodes.iter().find(|n| n.kind == twig::Kind::Metadata).and_then(|n| {
             Some((n.str_field("lang").unwrap_or("yaml"), n.str_field("text")?))
         })
     }
@@ -268,7 +268,7 @@ fn ingest_detached(
     // emits the node, and `FlatNode` has no field for it. Recover it from the
     // source the way twig itself says to — every node carries a byte span into
     // the real input, and slicing it is the authoritative read.
-    if fl.kind == "footnote"
+    if fl.kind == twig::Kind::Footnote
         && let Some(label) = footnote_label(source, span)
         && let Some(map) = payload.as_object_mut()
     {
@@ -309,7 +309,7 @@ fn footnote_label(source: &str, span: (usize, usize)) -> Option<String> {
 /// friends work uniformly across both ingest paths.
 fn flat_payload(fl: &twig::FlatNode) -> Json {
     let mut map = serde_json::Map::new();
-    map.insert("kind".into(), Json::String(fl.kind.clone()));
+    map.insert("kind".into(), Json::String(fl.kind.to_string()));
     if let Some(l) = fl.level {
         map.insert("level".into(), Json::from(l));
     }
@@ -342,7 +342,7 @@ fn build(
         .as_object()
         .ok_or_else(|| anyhow!("AST JSON node #{cursor} is not an object"))?;
 
-    let kind = obj
+    let kind_string = obj
         .get("kind")
         .and_then(Json::as_str)
         .ok_or_else(|| anyhow!("AST JSON node #{cursor} has no `kind`"))?
@@ -352,21 +352,23 @@ fn build(
         .get("span")
         .and_then(Json::as_array)
         .and_then(|a| Some((a.first()?.as_u64()? as usize, a.get(1)?.as_u64()? as usize)))
-        .ok_or_else(|| anyhow!("AST JSON node #{cursor} ({kind}) has no `span`"))?;
+        .ok_or_else(|| anyhow!("AST JSON node #{cursor} ({kind_string}) has no `span`"))?;
 
     let fl = order
         .get(*cursor)
         .and_then(|id| by_id.get(id))
         .ok_or_else(|| {
-            anyhow!("the flat tree walk ran out at #{cursor} while ast_json still had `{kind}`")
+            anyhow!("the flat tree walk ran out at #{cursor} while ast_json still had `{kind_string}`")
         })?;
+
+    let kind = twig::Kind::from(kind_string.as_str());
 
     // The correspondence check the module docs promise. Kind AND span must
     // agree; if twig ever reorders one walk without the other, this names the
     // exact node instead of silently mis-attributing every style rule after it.
     if fl.kind != kind || fl.span.start != span.0 || fl.span.end != span.1 {
         bail!(
-            "AST walk mismatch at #{cursor}: ast_json says `{kind}` {span:?}, \
+            "AST walk mismatch at #{cursor}: ast_json says `{kind_string}` {span:?}, \
              the flat tree walk says `{}` {:?}. See src/doc.rs.",
             fl.kind,
             (fl.span.start, fl.span.end)
@@ -384,7 +386,7 @@ fn build(
     payload.remove("content_span");
 
     out.push(Node {
-        kind,
+        kind: kind,
         node_id: fl.id.0,
         parent,
         children: Vec::new(),

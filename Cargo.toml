@@ -29,7 +29,7 @@ network = ["dep:typst-kit", "typst-kit/system-files", "typst-kit/system-download
 
 [dependencies]
 # The document AST. Published as `twig-doc`; imported as `twig`.
-twig-doc = "2.8"
+twig-doc = "3"
 # Parses the config file AND the frontmatter. `metadata.lang` names exactly the
 # languages fig speaks (yaml/toml/json/fig), so one parser covers both.
 fig = { version = "3.0", features = ["serde"] }

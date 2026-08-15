@@ -329,7 +329,7 @@ fn render_list_item_body(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) 
         return;
     }
     let n = doc.node(idx);
-    let only_para = n.children.len() == 1 && doc.node(n.children[0]).kind == "para";
+    let only_para = n.children.len() == 1 && doc.node(n.children[0]).kind == twig::Kind::Para;
     if only_para {
         emit_inlines(out, doc, res, &doc.node(n.children[0]).children);
     } else {
@@ -345,7 +345,7 @@ fn render_table(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
         .children
         .iter()
         .copied()
-        .filter(|&c| doc.node(c).kind == "row")
+        .filter(|&c| doc.node(c).kind == twig::Kind::Row)
         .collect();
     let cols = rows
         .iter()
@@ -399,7 +399,7 @@ fn render_table(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
         }
     }
 
-    if let Some(&cap) = n.children.iter().find(|&&c| doc.node(c).kind == "caption") {
+    if let Some(&cap) = n.children.iter().find(|&&c| doc.node(c).kind == twig::Kind::Caption) {
         let capnode = doc.node(cap);
         if !capnode.children.is_empty() {
             let mut body = String::new();
@@ -414,23 +414,23 @@ fn render_table(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
 
 /// The block kinds this backend renders as blocks. Used to tell an inline run
 /// from a block run in a container whose content model is either.
-fn is_block_kind(kind: &str) -> bool {
+fn is_block_kind(kind: &twig::Kind) -> bool {
     matches!(
         kind,
-        "para"
-            | "heading"
-            | "block_quote"
-            | "code_block"
-            | "raw_block"
-            | "bullet_list"
-            | "ordered_list"
-            | "task_list"
-            | "definition_list"
-            | "table"
-            | "line_block"
-            | "thematic_break"
-            | "container"
-            | "section"
+        twig::Kind::Para
+            | twig::Kind::Heading
+            | twig::Kind::BlockQuote
+            | twig::Kind::CodeBlock
+            | twig::Kind::RawBlock
+            | twig::Kind::BulletList
+            | twig::Kind::OrderedList
+            | twig::Kind::TaskList
+            | twig::Kind::DefinitionList
+            | twig::Kind::Table
+            | twig::Kind::LineBlock
+            | twig::Kind::ThematicBreak
+            | twig::Kind::Container
+            | twig::Kind::Section
     )
 }
 
@@ -909,7 +909,7 @@ fn smart_punct(kind: &str) -> &'static str {
 /// Find the `footnote` definition whose label matches `label`.
 fn find_footnote(doc: &Doc, label: &str) -> Option<Idx> {
     doc.nodes.iter().position(|n| {
-        n.kind == "footnote" && n.str_field("label").or(n.str_field("text")) == Some(label)
+        n.kind == twig::Kind::Footnote && n.str_field("label").or(n.str_field("text")) == Some(label)
     })
 }
 
