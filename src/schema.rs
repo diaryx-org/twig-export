@@ -29,7 +29,7 @@
 use anyhow::{Result, bail};
 use fig::Value;
 use fig_schema::{
-    FieldRule, FieldType, PathPat, Presentation, Schema, Seg, Term, Validate, Validation,
+    FieldRule, FieldType, PathPat, Schema, Seg, Term, Validate, Validation,
     validate_enum,
 };
 
@@ -232,12 +232,12 @@ fn vocab(values: &[&str], closed: bool) -> Constraint {
 }
 
 fn rule(segs: Vec<Seg2>, ty: FieldType, constraint: Option<Constraint>) -> FieldRule<Constraint> {
-    FieldRule {
-        at: PathPat(segs.into_iter().map(Seg2::into_pat).collect()),
-        ty: Some(ty),
-        constraint,
-        present: Presentation::default(),
-    }
+    // The builder rather than a struct expression: `FieldRule` is
+    // `#[non_exhaustive]` since fig-schema 0.2, so a field it gains later
+    // arrives as its default here instead of as a compile error.
+    FieldRule::new(PathPat(segs.into_iter().map(Seg2::into_pat).collect()))
+        .ty(ty)
+        .constraint_opt(constraint)
 }
 
 /// A tiny builder so the schema table below reads as paths rather than as

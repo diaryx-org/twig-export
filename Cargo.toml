@@ -32,7 +32,7 @@ network = ["dep:typst-kit", "typst-kit/system-files", "typst-kit/system-download
 twig-doc = "3"
 # Parses the config file AND the frontmatter. `metadata.lang` names exactly the
 # languages fig speaks (yaml/toml/json/fig), so one parser covers both.
-fig = { version = "3.0", features = ["serde"] }
+fig = { version = "4", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
@@ -45,7 +45,7 @@ typst-kit = { version = "0.15", optional = true, features = ["scan-fonts", "embe
 # lives here and is not re-exported by the `typst` facade.
 typst-layout = { version = "0.15", optional = true }
 typst-html = { version = "0.15", optional = true }
-fig-schema = "0.1"
+fig-schema = "0.3.0"
 
 [lib]
 name = "twig_export"
