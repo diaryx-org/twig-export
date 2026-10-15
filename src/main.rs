@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
-use twig_export::{Rendered, config::Config, format_from_path, render};
+use twig_export::{Extensions, Rendered, config::Config, format_from_path, format_named, render};
 
 #[derive(Parser)]
 #[command(
@@ -25,7 +25,7 @@ struct Args {
     #[arg(short, long)]
     output: Option<PathBuf>,
 
-    /// Style config (.toml/.yaml/.json/.fig). Without one, built-in defaults
+    /// Style config (.toml/.yaml/.json/.figl). Without one, built-in defaults
     /// render a plain but complete document.
     #[arg(short, long)]
     config: Option<PathBuf>,
@@ -92,7 +92,7 @@ fn run() -> Result<()> {
         }
     }
 
-    let extensions = twig::MarkdownExtensions {
+    let extensions = Extensions {
         directives: args.directives,
         math: args.math,
         html_elements: args.html_elements,
@@ -158,13 +158,13 @@ fn write_html(_path: &std::path::Path, _typ: &str) -> Result<()> {
 }
 
 fn parse_format(name: &str) -> Result<twig::Format> {
-    Ok(match name.to_ascii_lowercase().as_str() {
-        "djot" | "dj" => twig::Format::Djot,
-        "markdown" | "md" => twig::Format::Markdown,
-        "xml" => twig::Format::Xml,
-        "html" | "htm" => twig::Format::Html,
-        other => bail!("unknown input format {other:?} (djot, markdown, xml, html)"),
-    })
+    match format_named(name) {
+        Some(format) => Ok(format),
+        None => bail!(
+            "unknown input format {:?} (djot, markdown, xml, html)",
+            name.to_ascii_lowercase()
+        ),
+    }
 }
 
 fn explain(cfg: &Config, r: &Rendered) {

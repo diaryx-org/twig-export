@@ -660,7 +660,7 @@ mod tests {
     use super::*;
 
     fn findings(toml: &str) -> Vec<Finding> {
-        let doc = fig::Document::parse(toml.as_bytes(), fig::Format::Toml).unwrap();
+        let doc = fig::Document::parse(toml.as_bytes(), fig_toml::format().unwrap()).unwrap();
         check(&doc.to_value().unwrap())
     }
 

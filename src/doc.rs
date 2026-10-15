@@ -40,10 +40,10 @@
 //!
 //! ── Why not reimplement the selector engine ────────────────────────────────
 //! The config surface is *defined* in terms of twig's CSS-lite selectors
-//! (`src/ast/select.zig`). Reimplementing that grammar here would mean two
-//! copies drifting apart, and a config file that silently means different
-//! things to `twig query` and to us. Zipping the ids across is the cost of
-//! having exactly one implementation of the grammar.
+//! (twig-kit's `src/ast/select.rs`). Reimplementing that grammar here would
+//! mean two copies drifting apart, and a config file that silently means
+//! different things to `twig query` and to us. Zipping the ids across is the
+//! cost of having exactly one implementation of the grammar.
 
 use std::collections::HashMap;
 
@@ -388,7 +388,7 @@ fn build(
     payload.remove("content_span");
 
     out.push(Node {
-        kind: kind,
+        kind,
         node_id: fl.id.0,
         parent,
         children: Vec::new(),

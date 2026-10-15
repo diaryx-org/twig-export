@@ -71,7 +71,7 @@ pub fn resolve(cfg: &Config, doc: &Doc, td: &mut twig::Document) -> Result<Resol
         let matches = td.query(&rule.select).with_context(|| {
             format!(
                 "rule #{} has an invalid selector {:?} \
-                 (grammar: twig's src/ast/select.zig)",
+                 (grammar: twig-kit's src/ast/select.rs)",
                 i + 1,
                 rule.select
             )

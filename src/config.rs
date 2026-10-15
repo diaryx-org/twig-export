@@ -2,9 +2,9 @@
 //! styling.
 //!
 //! ── Selectors are twig's, not ours ─────────────────────────────────────────
-//! A rule's `select` is a twig CSS-lite selector (`src/ast/select.zig`),
-//! resolved by twig's own engine. So anything you can find with
-//! `twig query 'container[name=note][class~=warn]'` is something you can
+//! A rule's `select` is a twig CSS-lite selector (twig-kit's
+//! `src/ast/select.rs`), resolved by twig's own engine. So anything
+//! `twig query 'container[name=note][class~=warn]'` finds is something you can
 //! style, with identical semantics, and there is no second grammar to learn or
 //! to drift. See [`crate::doc`] for how ids are threaded across.
 //!
@@ -196,7 +196,7 @@ pub struct Rule {
 
 impl Config {
     /// Load a config from any language fig speaks — `.toml`, `.yaml`, `.json`,
-    /// `.fig` — detected from the extension.
+    /// `.figl` — detected from the extension.
     ///
     /// Using fig here rather than a single hardcoded format is deliberate:
     /// the same parser reads the document's frontmatter (see [`crate::meta`]),

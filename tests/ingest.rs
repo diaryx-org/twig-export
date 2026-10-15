@@ -9,11 +9,12 @@ use twig_export::doc::Doc;
 use twig_export::style::Style;
 
 fn parse(src: &str) -> (twig::Document, Doc) {
-    let ext = twig::MarkdownExtensions {
-        directives: true,
-        ..Default::default()
-    };
-    let mut td = twig::Document::parse_str_with(src, twig::Format::Markdown, ext).unwrap();
+    let mut td = twig::Document::parse_with_features(
+        src.as_bytes(),
+        twig_markdown::format(),
+        &["directives"],
+    )
+    .unwrap();
     let doc = Doc::ingest(&mut td, src).unwrap();
     (td, doc)
 }

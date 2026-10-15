@@ -26,9 +26,9 @@ fn one_rule_with_a_placeholder_covers_every_attribute_value() {
 
     let rendered = render(
         source,
-        twig::Format::Markdown,
+        twig_markdown::format(),
         &cfg,
-        twig::MarkdownExtensions {
+        twig_export::Extensions {
             directives: true,
             ..Default::default()
         },
@@ -67,9 +67,9 @@ fn wrap_is_interpolated_against_the_matched_node() {
 
     let rendered = render(
         source,
-        twig::Format::Markdown,
+        twig_markdown::format(),
         &cfg,
-        twig::MarkdownExtensions {
+        twig_export::Extensions {
             directives: true,
             ..Default::default()
         },
@@ -105,9 +105,9 @@ fn document_fields_interpolate_into_raw_preamble() {
 
     let rendered = render(
         source,
-        twig::Format::Markdown,
+        twig_markdown::format(),
         &cfg,
-        twig::MarkdownExtensions::default(),
+        twig_export::Extensions::default(),
     )
     .unwrap();
 
@@ -142,9 +142,9 @@ fn an_unmatched_placeholder_resolves_to_an_empty_string_not_an_error() {
 
     let rendered = render(
         source,
-        twig::Format::Markdown,
+        twig_markdown::format(),
         &cfg,
-        twig::MarkdownExtensions {
+        twig_export::Extensions {
             directives: true,
             ..Default::default()
         },
@@ -172,9 +172,9 @@ fn interpolated_output_still_compiles() {
 
     let rendered = render(
         source,
-        twig::Format::Markdown,
+        twig_markdown::format(),
         &cfg,
-        twig::MarkdownExtensions {
+        twig_export::Extensions {
             directives: true,
             ..Default::default()
         },

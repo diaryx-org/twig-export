@@ -618,65 +618,87 @@ checksum = "b97b65636e5b9ef369943878ac74335ba1c55c1cb6adbf1e2c293c624248d693"
 
 [[package]]
 name = "fig"
-version = "4.0.0"
+version = "7.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7851c277261b742c3958c482ef3d762d460fb7286890c3ca2ff2a17655a9d23a"
+checksum = "1912585cea7b84fd1cbacdd0ee85c57b12f54cc46a917145d97a62b95c3eafab"
 dependencies = [
- "fig-sys",
+ "fig-core",
  "serde",
 ]
 
 [[package]]
-name = "fig-schema"
-version = "0.3.0"
+name = "fig-core"
+version = "7.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a35f21dad45b4318ee9850ddc6d89ff9043971c8e4ec934e11988885a02b3a6"
+checksum = "310da8e88299b38abe3aadfa1aecce5c46a93dc767ee38900f23e9f630e05290"
+dependencies = [
+ "fig-kit",
+]
+
+[[package]]
+name = "fig-figl"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "408de7cd00cce13acf2174086a66f4e8438559462711f13a0032b8e9198d58df"
+dependencies = [
+ "fig",
+ "fig-kit",
+]
+
+[[package]]
+name = "fig-json"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a4baefafc7c88ebacda7d1d2423eba469828d490199462f032bfbf3db6637b7"
+dependencies = [
+ "fig",
+ "fig-kit",
+]
+
+[[package]]
+name = "fig-kit"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0005cbc0579d07474d9a452c76f23cbf55ba6c82dd84c7e7ed5c38ace903a7a"
+
+[[package]]
+name = "fig-schema"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53d7116306a4231b3b1fb2fae939acb9a07e86c604223afb9ddcf6d8fa10da5b"
 dependencies = [
  "fig",
 ]
 
 [[package]]
-name = "fig-sys"
-version = "4.0.0"
+name = "fig-toml"
+version = "7.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77025202ee774d64cb9f65664456b11a30483b4afaba2042a7049ee3d07b8c7d"
+checksum = "47f4110cda967917a1447fbc44082620ba71ff202ab7a34b61b7abfd19a3de54"
 dependencies = [
- "fig-sys-linux-arm64-gnu",
- "fig-sys-linux-x64-gnu",
- "fig-sys-macos-arm64",
- "fig-sys-wasm32",
- "fig-sys-windows-x64-msvc",
+ "fig",
+ "fig-kit",
 ]
 
 [[package]]
-name = "fig-sys-linux-arm64-gnu"
-version = "4.0.0"
+name = "fig-yaml"
+version = "7.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1dd2f87336414bebd700de027d73643aad8233f5f5d9f38095b42f4a9777d868"
+checksum = "62e8dca9c7c5083277a28c48a0b16a6fabc110a7fea8e2c53d197afc129f07e3"
+dependencies = [
+ "fig",
+ "fig-kit",
+]
 
 [[package]]
-name = "fig-sys-linux-x64-gnu"
-version = "4.0.0"
+name = "fig-zon"
+version = "7.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c82efb10916b8bae0b8b06864531a5ed59c9b9dcb00fe22b5ee1ec7f56cb52e2"
-
-[[package]]
-name = "fig-sys-macos-arm64"
-version = "4.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2606faade4c97de8b7206b1a3adfdc944dff3f405882fbfd64e783ce0a3ca0b"
-
-[[package]]
-name = "fig-sys-wasm32"
-version = "4.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b75e57d0ae43a0b32ae2b4300114d30503863da75a4c609f8d978f29cf3956eb"
-
-[[package]]
-name = "fig-sys-windows-x64-msvc"
-version = "4.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7f4c42715367913c17341acfcdd87057bb212acdd28167891576df4fdb560d3"
+checksum = "cf6ddb7ae3d30bc1d9827384e1b5b1defdf5e8dccb20fee01d83e052a9415c81"
+dependencies = [
+ "fig",
+ "fig-kit",
+]
 
 [[package]]
 name = "filetime"
@@ -2619,12 +2641,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "twig-doc"
-version = "3.0.0"
+name = "twig-djot"
+version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b62af9972c8e82e885bbaa6290030fbe38cd2808412dff9dd55a61a67b23965a"
+checksum = "d8619b5a7e9b37e5f25463b25d43424c5afea59b0d0478f0bc45e99744af4203"
 dependencies = [
- "twig-sys",
+ "twig-doc",
+ "twig-kit",
+]
+
+[[package]]
+name = "twig-doc"
+version = "6.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0cd6cc20c4f31dd31e5e56dfa7d01f3dbdf5692695b1007e8c54640f9766193f"
+dependencies = [
+ "twig-kit",
 ]
 
 [[package]]
@@ -2634,10 +2666,19 @@ dependencies = [
  "anyhow",
  "clap",
  "fig",
+ "fig-figl",
+ "fig-json",
  "fig-schema",
+ "fig-toml",
+ "fig-yaml",
+ "fig-zon",
  "serde",
  "serde_json",
+ "twig-djot",
  "twig-doc",
+ "twig-html",
+ "twig-markdown",
+ "twig-xml",
  "typst",
  "typst-html",
  "typst-kit",
@@ -2646,47 +2687,41 @@ dependencies = [
 ]
 
 [[package]]
-name = "twig-sys"
-version = "3.0.0"
+name = "twig-html"
+version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8571ee4e4f407f0bac33a68f441713d9aaeaf8c6548d73180ad9c5d4b3bcf514"
+checksum = "1beb6c0999dc04d89a5a0da40e585cb05a9a7c13ecb19c2e5a65085a147f62ca"
 dependencies = [
- "twig-sys-linux-arm64-gnu",
- "twig-sys-linux-x64-gnu",
- "twig-sys-macos-arm64",
- "twig-sys-wasm32",
- "twig-sys-windows-x64-msvc",
+ "twig-doc",
+ "twig-kit",
 ]
 
 [[package]]
-name = "twig-sys-linux-arm64-gnu"
-version = "3.0.0"
+name = "twig-kit"
+version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84f23ecfe3c9a2b9db88cc9f2a1303766ac6b7d78c23431510d2d26b59d287e8"
+checksum = "1bc21949975c1e3c5ab858d0d104e9d4f4d6000e1dcfa9e46bb7dcc460bba24f"
 
 [[package]]
-name = "twig-sys-linux-x64-gnu"
-version = "3.0.0"
+name = "twig-markdown"
+version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42d56a90b506e8541916e0349ad094959af2448b5a057567535aeb4b6f42573c"
+checksum = "60ffcae233483874bec0f3c39f8a2480a087d71beb038049a9ee287e0e570745"
+dependencies = [
+ "twig-doc",
+ "twig-html",
+ "twig-kit",
+]
 
 [[package]]
-name = "twig-sys-macos-arm64"
-version = "3.0.0"
+name = "twig-xml"
+version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d9fe6dc2957c361ff4034c00032b988e6a40f7c971d902fcd768fd7842f2ec6"
-
-[[package]]
-name = "twig-sys-wasm32"
-version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0804205ec9d40b1360c588e06706713010bf2c9ebafb5c2f220088ead3856fc"
-
-[[package]]
-name = "twig-sys-windows-x64-msvc"
-version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e855077916757c490f8345026787d2efde046d1e4f3980dea16a5c371994522"
+checksum = "8634fdd8e854401a1f21aef62ef80e3a87d1723ad59e810f6a633c66bf2c42c6"
+dependencies = [
+ "twig-doc",
+ "twig-kit",
+]
 
 [[package]]
 name = "two-face"

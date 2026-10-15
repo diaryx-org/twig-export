@@ -28,17 +28,25 @@ use crate::config::Document;
 
 /// Map a language name — a `metadata.lang` fence tag, or a config file
 /// extension — to a fig parser.
+///
+/// fig's core names no language (fig 6), so each arm asks the language's
+/// own crate for its format, which registers it the first time. JSONC and
+/// JSON5 are dialects fig-json registers beside JSON, found by name after.
+/// `fig` is kept beside `figl`, the native dialect's name since fig 5, so a
+/// `---fig` fence or a `.fig` config still reads.
 pub fn fig_format(lang: &str) -> Option<fig::Format> {
-    Some(match lang.trim().to_ascii_lowercase().as_str() {
-        "json" => fig::Format::Json,
-        "jsonc" => fig::Format::Jsonc,
-        "json5" => fig::Format::Json5,
-        "yaml" | "yml" => fig::Format::Yaml,
-        "toml" => fig::Format::Toml,
-        "zon" => fig::Format::Zon,
-        "fig" | "figl" => fig::Format::Fig,
-        _ => return None,
-    })
+    match lang.trim().to_ascii_lowercase().as_str() {
+        "json" => fig_json::format().ok(),
+        dialect @ ("jsonc" | "json5") => {
+            fig_json::format().ok()?;
+            fig::Format::by_name(dialect)
+        }
+        "yaml" | "yml" => fig_yaml::format().ok(),
+        "toml" => fig_toml::format().ok(),
+        "zon" => fig_zon::format().ok(),
+        "fig" | "figl" => fig_figl::format().ok(),
+        _ => None,
+    }
 }
 
 /// Parse a metadata island into a flat key/value map.
@@ -153,6 +161,27 @@ mod tests {
         doc.from_metadata.insert("paper".into(), "pdf-paper".into());
         let unfired = apply_metadata(&mut doc, &BTreeMap::new());
         assert_eq!(unfired, vec!["paper <- pdf-paper"]);
+    }
+
+    /// Every name maps to a registered fig format, the JSON dialects
+    /// included: fig 7 has none until a language crate registers it.
+    #[test]
+    fn every_language_name_resolves() {
+        for (lang, text) in [
+            ("yaml", "a: 1\n"),
+            ("yml", "a: 1\n"),
+            ("toml", "a = 1\n"),
+            ("json", r#"{"a": 1}"#),
+            ("jsonc", "{\"a\": 1 // c\n}"),
+            ("json5", "{a: 1}"),
+            ("zon", ".{ .a = 1 }"),
+            ("fig", "a = 1\n"),
+            ("figl", "a = 1\n"),
+        ] {
+            let meta = parse_metadata(lang, text).unwrap();
+            assert_eq!(meta.get("a"), Some(&Json::from(1)), "{lang}");
+        }
+        assert!(fig_format("ini").is_none());
     }
 
     #[test]
