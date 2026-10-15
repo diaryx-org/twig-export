@@ -80,5 +80,8 @@ fn a_typst_universe_template_compiles_via_network_package_resolution() {
         pdf::compile(FOLKLORE_EXAMPLE).expect("the folklore template must download and compile");
 
     assert!(bytes.starts_with(b"%PDF-"), "output must be a PDF");
-    assert!(bytes.len() > 1000, "a multi-chapter book should not be tiny");
+    assert!(
+        bytes.len() > 1000,
+        "a multi-chapter book should not be tiny"
+    );
 }

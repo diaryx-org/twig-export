@@ -274,7 +274,11 @@ mod tests {
 
         let b = base.box_.unwrap();
         assert_eq!(b.fill.as_deref(), Some("#fee"), "the variant's fill wins");
-        assert_eq!(b.stroke.as_deref(), Some("#88a"), "the base's stroke survives");
+        assert_eq!(
+            b.stroke.as_deref(),
+            Some("#88a"),
+            "the base's stroke survives"
+        );
         assert_eq!(b.padding.as_deref(), Some("0.8em"));
     }
 

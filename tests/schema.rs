@@ -12,7 +12,7 @@
 
 use twig_export::config::{DOC_FIELD_NAMES, Document};
 use twig_export::schema::{BOX_KEYS, DOCUMENT_KEYS, RAW_KEYS, STYLE_KEYS};
-use twig_export::style::{Align, Break, BoxStyle, RawTypst, Style, Weight};
+use twig_export::style::{Align, BoxStyle, Break, RawTypst, Style, Weight};
 
 /// Serialize a value and collect its top-level keys.
 fn keys_of<T: serde::Serialize>(value: &T) -> Vec<String> {

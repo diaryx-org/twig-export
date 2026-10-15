@@ -35,9 +35,21 @@ fn one_rule_with_a_placeholder_covers_every_attribute_value() {
     )
     .unwrap();
 
-    assert_eq!(rendered.match_counts, vec![2], "one rule, both nodes matched");
-    assert!(rendered.typst.contains("#lorem(int(\"150\"))"), "{}", rendered.typst);
-    assert!(rendered.typst.contains("#lorem(int(\"42\"))"), "{}", rendered.typst);
+    assert_eq!(
+        rendered.match_counts,
+        vec![2],
+        "one rule, both nodes matched"
+    );
+    assert!(
+        rendered.typst.contains("#lorem(int(\"150\"))"),
+        "{}",
+        rendered.typst
+    );
+    assert!(
+        rendered.typst.contains("#lorem(int(\"42\"))"),
+        "{}",
+        rendered.typst
+    );
 }
 
 /// `raw.wrap` is interpolated too — a wrapper's function/argument can vary
@@ -105,7 +117,9 @@ fn document_fields_interpolate_into_raw_preamble() {
         rendered.typst
     );
     assert!(
-        rendered.typst.contains("#let manual-author = \"A. Author\""),
+        rendered
+            .typst
+            .contains("#let manual-author = \"A. Author\""),
         "{}",
         rendered.typst
     );
@@ -137,7 +151,11 @@ fn an_unmatched_placeholder_resolves_to_an_empty_string_not_an_error() {
     )
     .unwrap();
 
-    assert!(rendered.typst.contains("#[count: \"\"]"), "{}", rendered.typst);
+    assert!(
+        rendered.typst.contains("#[count: \"\"]"),
+        "{}",
+        rendered.typst
+    );
 }
 
 #[cfg(feature = "pdf")]

@@ -140,7 +140,11 @@ mod tests {
 
         apply_metadata(&mut doc, &meta);
         assert_eq!(doc.title.as_deref(), Some("Real Title"));
-        assert_eq!(doc.paper.as_deref(), Some("a4"), "unbound key must be inert");
+        assert_eq!(
+            doc.paper.as_deref(),
+            Some("a4"),
+            "unbound key must be inert"
+        );
     }
 
     #[test]

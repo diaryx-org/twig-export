@@ -150,9 +150,10 @@ impl Doc {
     /// exactly as the fence tag was written — which is what tells [`crate::meta`]
     /// which fig parser to hand the text to.
     pub fn metadata(&self) -> Option<(&str, &str)> {
-        self.nodes.iter().find(|n| n.kind == twig::Kind::Metadata).and_then(|n| {
-            Some((n.str_field("lang").unwrap_or("yaml"), n.str_field("text")?))
-        })
+        self.nodes
+            .iter()
+            .find(|n| n.kind == twig::Kind::Metadata)
+            .and_then(|n| Some((n.str_field("lang").unwrap_or("yaml"), n.str_field("text")?)))
     }
 
     /// Concatenated descendant text of `idx` — the same projection a
@@ -186,8 +187,7 @@ impl Doc {
             serde_json::from_slice(&json_bytes).context("twig emitted unparseable AST JSON")?;
 
         let flat = td.nodes().context("twig nodes() failed")?;
-        let by_id: HashMap<NodeId, &twig::FlatNode> =
-            flat.iter().map(|n| (n.id.0, n)).collect();
+        let by_id: HashMap<NodeId, &twig::FlatNode> = flat.iter().map(|n| (n.id.0, n)).collect();
 
         let root = flat.first().context("twig returned an empty node array")?;
         if root.parent.is_some() {
@@ -358,7 +358,9 @@ fn build(
         .get(*cursor)
         .and_then(|id| by_id.get(id))
         .ok_or_else(|| {
-            anyhow!("the flat tree walk ran out at #{cursor} while ast_json still had `{kind_string}`")
+            anyhow!(
+                "the flat tree walk ran out at #{cursor} while ast_json still had `{kind_string}`"
+            )
         })?;
 
     let kind = twig::Kind::from(kind_string.as_str());

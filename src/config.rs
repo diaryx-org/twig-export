@@ -275,7 +275,11 @@ mod tests {
     #[test]
     fn a_warning_loads_successfully_and_is_reported() {
         let (cfg, warnings) = Config::parse("[document]\npaper = \"a9\"\n", "toml").unwrap();
-        assert_eq!(cfg.document.paper.as_deref(), Some("a9"), "value passes through");
+        assert_eq!(
+            cfg.document.paper.as_deref(),
+            Some("a9"),
+            "value passes through"
+        );
         assert_eq!(warnings.len(), 1);
         assert!(!warnings[0].validation.is_reject());
     }

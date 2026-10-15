@@ -89,15 +89,16 @@ fn detached_footnote_definitions_are_ingested_with_their_label() {
 /// `FlatNode`. If twig ever drops one of these from the JSON, this fails.
 #[test]
 fn json_only_payloads_survive_ingest() {
-    let (_, doc) = parse(
-        "---\ntitle: T\n---\n\n```zig\nx\n```\n\n3) three\n\n- [x] done\n",
-    );
+    let (_, doc) = parse("---\ntitle: T\n---\n\n```zig\nx\n```\n\n3) three\n\n- [x] done\n");
     let get = |kind: twig::Kind| doc.nodes.iter().find(|n| n.kind == kind).unwrap();
 
     assert_eq!(get(twig::Kind::Metadata).str_field("lang"), Some("yaml"));
     assert_eq!(get(twig::Kind::CodeBlock).str_field("lang"), Some("zig"));
     assert_eq!(get(twig::Kind::OrderedList).int_field("start"), Some(3));
-    assert_eq!(get(twig::Kind::TaskListItem).bool_field("checked"), Some(true));
+    assert_eq!(
+        get(twig::Kind::TaskListItem).bool_field("checked"),
+        Some(true)
+    );
 }
 
 /// Rules are matched by twig's OWN selector engine, so the config surface and
@@ -136,7 +137,10 @@ fn selector_matches_map_back_to_ingested_nodes() {
 
     // Hiding must reach the subtree, not just the container the rule matched.
     let body = doc.node(warn).children[0];
-    assert!(resolved.is_hidden(&doc, body), "descendants inherit `hidden`");
+    assert!(
+        resolved.is_hidden(&doc, body),
+        "descendants inherit `hidden`"
+    );
 }
 
 /// An invalid selector must fail at the rule that owns it, naming it.

@@ -208,7 +208,12 @@ fn render_block_content(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx, s
             let text = n.str_field("text").unwrap_or_default();
             match n.str_field("lang").filter(|l| !l.is_empty()) {
                 Some(lang) => {
-                    let _ = write!(out, "#raw(block: true, lang: {}, {})", quote(lang), quote(text));
+                    let _ = write!(
+                        out,
+                        "#raw(block: true, lang: {}, {})",
+                        quote(lang),
+                        quote(text)
+                    );
                 }
                 None => {
                     let _ = write!(out, "#raw(block: true, {})", quote(text));
@@ -254,7 +259,12 @@ fn render_block_content(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx, s
                 let checked = doc.node(c).bool_field("checked").unwrap_or(false);
                 let mut item = String::new();
                 render_list_item_body(&mut item, doc, res, c);
-                let _ = writeln!(out, "- {} {}", checkbox(checked), indent_continuation(&item));
+                let _ = writeln!(
+                    out,
+                    "- {} {}",
+                    checkbox(checked),
+                    indent_continuation(&item)
+                );
             }
         }
 
@@ -399,7 +409,11 @@ fn render_table(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
         }
     }
 
-    if let Some(&cap) = n.children.iter().find(|&&c| doc.node(c).kind == twig::Kind::Caption) {
+    if let Some(&cap) = n
+        .children
+        .iter()
+        .find(|&&c| doc.node(c).kind == twig::Kind::Caption)
+    {
         let capnode = doc.node(cap);
         if !capnode.children.is_empty() {
             let mut body = String::new();
@@ -494,7 +508,11 @@ fn emit_inline(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
         }
         // Same reasoning as `code_block`: a call, not a fence.
         "verbatim" | "code" => {
-            let _ = write!(inner, "#raw({})", quote(n.str_field("text").unwrap_or_default()));
+            let _ = write!(
+                inner,
+                "#raw({})",
+                quote(n.str_field("text").unwrap_or_default())
+            );
         }
         "link" => {
             let dest = n.str_field("destination").unwrap_or_default();
@@ -707,8 +725,23 @@ fn escape(s: &str) -> String {
     for c in s.chars() {
         if matches!(
             c,
-            '\\' | '#' | '$' | '*' | '_' | '`' | '<' | '>' | '@' | '~' | '[' | ']' | '"' | '\''
-                | '=' | '-' | '+' | '/'
+            '\\' | '#'
+                | '$'
+                | '*'
+                | '_'
+                | '`'
+                | '<'
+                | '>'
+                | '@'
+                | '~'
+                | '['
+                | ']'
+                | '"'
+                | '\''
+                | '='
+                | '-'
+                | '+'
+                | '/'
         ) {
             out.push('\\');
         }
@@ -853,7 +886,13 @@ fn color(c: &str) -> String {
 
 fn indent(s: &str) -> String {
     s.lines()
-        .map(|l| if l.is_empty() { String::new() } else { format!("  {l}") })
+        .map(|l| {
+            if l.is_empty() {
+                String::new()
+            } else {
+                format!("  {l}")
+            }
+        })
         .collect::<Vec<_>>()
         .join("\n")
 }
@@ -867,7 +906,13 @@ fn indent_continuation(s: &str) -> String {
         return String::new();
     };
     let rest: Vec<String> = lines
-        .map(|l| if l.is_empty() { String::new() } else { format!("  {l}") })
+        .map(|l| {
+            if l.is_empty() {
+                String::new()
+            } else {
+                format!("  {l}")
+            }
+        })
         .collect();
     if rest.is_empty() {
         first.to_string()
@@ -878,7 +923,10 @@ fn indent_continuation(s: &str) -> String {
 
 /// Crude markup strip for an `alt` attribute, which must be a plain string.
 fn strip_markup(s: &str) -> String {
-    s.replace('\\', "").replace(['[', ']'], "").trim().to_string()
+    s.replace('\\', "")
+        .replace(['[', ']'], "")
+        .trim()
+        .to_string()
 }
 
 /// Map twig's `ordered_list.numbering` to a Typst numbering pattern.
@@ -909,7 +957,8 @@ fn smart_punct(kind: &str) -> &'static str {
 /// Find the `footnote` definition whose label matches `label`.
 fn find_footnote(doc: &Doc, label: &str) -> Option<Idx> {
     doc.nodes.iter().position(|n| {
-        n.kind == twig::Kind::Footnote && n.str_field("label").or(n.str_field("text")) == Some(label)
+        n.kind == twig::Kind::Footnote
+            && n.str_field("label").or(n.str_field("text")) == Some(label)
     })
 }
 
