@@ -23,9 +23,9 @@ fn report_example_renders_to_the_golden_typst() {
 
     let rendered = render(
         &source,
-        twig::Format::Markdown,
+        twig_markdown::format(),
         &cfg,
-        twig::MarkdownExtensions {
+        twig_export::Extensions {
             directives: true,
             ..Default::default()
         },
@@ -71,9 +71,9 @@ fn hidden_directives_leave_no_trace_in_the_output() {
 
     let rendered = render(
         &source,
-        twig::Format::Markdown,
+        twig_markdown::format(),
         &cfg,
-        twig::MarkdownExtensions {
+        twig_export::Extensions {
             directives: true,
             ..Default::default()
         },

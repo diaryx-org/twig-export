@@ -5,8 +5,8 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 description = "Render Twig document ASTs to Typst and PDF, with a configurable directive/metadata style map."
 repository = "https://github.com/diaryx-org/twig-export"
-# `twig-doc` needs 1.85 (edition 2024 + offset_of!); typst 0.15 needs 1.92.
-# Track the higher of the two.
+# `twig-doc` needs 1.88 and fig 1.88; typst 0.15 needs 1.92. Track the
+# highest.
 rust-version = "1.92"
 
 [features]
@@ -28,11 +28,30 @@ html = ["dep:typst", "dep:typst-html", "dep:typst-kit"]
 network = ["dep:typst-kit", "typst-kit/system-files", "typst-kit/system-downloader"]
 
 [dependencies]
-# The document AST. Published as `twig-doc`; imported as `twig`.
-twig-doc = "3"
+# The document AST. Published as `twig-doc`; imported as `twig`. twig 6 is
+# pure Rust and its core names no language: each format twig-export reads is
+# a crate of its own whose `format()` registers it on first use.
+#
+# Default features off: twig-doc's `fig` feature is `twig::meta` (unused here —
+# frontmatter is read off the AST's `metadata` node, see src/meta.rs) and a
+# document's `twig` frontmatter key choosing its own parse features, which
+# would let a document turn on syntax the command line did not ask for.
+twig-doc = { version = "6", default-features = false }
+twig-markdown = "6"
+twig-djot = "6"
+twig-html = "6"
+twig-xml = "6"
 # Parses the config file AND the frontmatter. `metadata.lang` names exactly the
-# languages fig speaks (yaml/toml/json/fig), so one parser covers both.
-fig = { version = "4", features = ["serde"] }
+# languages fig speaks, so one parser covers both. fig's core names no
+# language (6.0): each is a crate that registers it, brought here without its
+# own `serde` feature since typed deserialization goes through
+# `fig::from_slice` in a format handle, behind fig's `serde`.
+fig = { version = "7", features = ["serde"] }
+fig-yaml = { version = "7", default-features = false, features = ["fig"] }
+fig-json = { version = "7", default-features = false, features = ["fig"] }
+fig-toml = { version = "7", default-features = false, features = ["fig"] }
+fig-zon = { version = "7", default-features = false, features = ["fig"] }
+fig-figl = { version = "7", default-features = false, features = ["fig"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 anyhow = "1"
@@ -45,7 +64,9 @@ typst-kit = { version = "0.15", optional = true, features = ["scan-fonts", "embe
 # lives here and is not re-exported by the `typst` facade.
 typst-layout = { version = "0.15", optional = true }
 typst-html = { version = "0.15", optional = true }
-fig-schema = "0.3.0"
+# 0.5 is on fig 7. The library alone: its default `cli` feature is the
+# command line.
+fig-schema = { version = "0.5", default-features = false }
 
 [lib]
 name = "twig_export"

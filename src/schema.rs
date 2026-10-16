@@ -29,8 +29,7 @@
 use anyhow::{Result, bail};
 use fig::Value;
 use fig_schema::{
-    FieldRule, FieldType, PathPat, Schema, Seg, Term, Validate, Validation,
-    validate_enum,
+    FieldRule, FieldType, PathPat, Schema, Seg, Term, Validate, Validation, validate_enum,
 };
 
 /// A constraint on one config field.
@@ -136,7 +135,10 @@ fn check_interpolation(node_scoped: bool, value: &Value) -> Validation {
                 );
             }
             ("doc", Some(name)) => {
-                worst = worse(worst, validate_enum(&doc_field_terms, true, &Value::Str(name.into())));
+                worst = worse(
+                    worst,
+                    validate_enum(&doc_field_terms, true, &Value::Str(name.into())),
+                );
             }
             _ => {}
         }
@@ -305,19 +307,20 @@ pub const DOCUMENT_KEYS: &[&str] = &[
 ];
 
 /// Every key valid inside a `[rule.box]`.
-pub const BOX_KEYS: &[&str] = &["fill", "stroke", "stroke-width", "padding", "radius", "width"];
+pub const BOX_KEYS: &[&str] = &[
+    "fill",
+    "stroke",
+    "stroke-width",
+    "padding",
+    "radius",
+    "width",
+];
 
 /// Every key valid inside a `[rule.raw]`.
 pub const RAW_KEYS: &[&str] = &["before", "after", "wrap", "preamble"];
 
 const WEIGHTS: &[&str] = &[
-    "thin",
-    "light",
-    "regular",
-    "medium",
-    "semibold",
-    "bold",
-    "black",
+    "thin", "light", "regular", "medium", "semibold", "bold", "black",
 ];
 const ALIGNS: &[&str] = &["left", "center", "right", "justify"];
 const BREAKS: &[&str] = &["none", "page", "column"];
@@ -345,11 +348,31 @@ pub fn schema() -> Schema<Constraint> {
 
     Schema::new(vec![
         // ── [document] ────────────────────────────────────────────────────
-        rule(vec![K("document"), K("paper")], Str, Some(vocab(PAPERS, false))),
-        rule(vec![K("document"), K("margin")], Str, Some(Constraint::Length)),
-        rule(vec![K("document"), K("size")], Str, Some(Constraint::Length)),
-        rule(vec![K("document"), K("leading")], Str, Some(Constraint::Length)),
-        rule(vec![K("document"), K("align")], Str, Some(vocab(ALIGNS, true))),
+        rule(
+            vec![K("document"), K("paper")],
+            Str,
+            Some(vocab(PAPERS, false)),
+        ),
+        rule(
+            vec![K("document"), K("margin")],
+            Str,
+            Some(Constraint::Length),
+        ),
+        rule(
+            vec![K("document"), K("size")],
+            Str,
+            Some(Constraint::Length),
+        ),
+        rule(
+            vec![K("document"), K("leading")],
+            Str,
+            Some(Constraint::Length),
+        ),
+        rule(
+            vec![K("document"), K("align")],
+            Str,
+            Some(vocab(ALIGNS, true)),
+        ),
         rule(vec![K("document"), K("toc-depth")], Int, None),
         rule(
             vec![K("document"), K("raw-preamble")],
@@ -362,23 +385,79 @@ pub fn schema() -> Schema<Constraint> {
             Some(Constraint::Interpolation { node_scoped: false }),
         ),
         // ── [[rule]] ──────────────────────────────────────────────────────
-        rule(vec![K("rule"), Each, K("select")], Str, Some(Constraint::Selector)),
-        rule(vec![K("rule"), Each, K("weight")], Str, Some(vocab(WEIGHTS, true))),
-        rule(vec![K("rule"), Each, K("align")], Str, Some(vocab(ALIGNS, true))),
-        rule(vec![K("rule"), Each, K("break-before")], Str, Some(vocab(BREAKS, true))),
-        rule(vec![K("rule"), Each, K("break-after")], Str, Some(vocab(BREAKS, true))),
-        rule(vec![K("rule"), Each, K("color")], Str, Some(Constraint::Color)),
+        rule(
+            vec![K("rule"), Each, K("select")],
+            Str,
+            Some(Constraint::Selector),
+        ),
+        rule(
+            vec![K("rule"), Each, K("weight")],
+            Str,
+            Some(vocab(WEIGHTS, true)),
+        ),
+        rule(
+            vec![K("rule"), Each, K("align")],
+            Str,
+            Some(vocab(ALIGNS, true)),
+        ),
+        rule(
+            vec![K("rule"), Each, K("break-before")],
+            Str,
+            Some(vocab(BREAKS, true)),
+        ),
+        rule(
+            vec![K("rule"), Each, K("break-after")],
+            Str,
+            Some(vocab(BREAKS, true)),
+        ),
+        rule(
+            vec![K("rule"), Each, K("color")],
+            Str,
+            Some(Constraint::Color),
+        ),
         rule(vec![K("rule"), Each, K("hidden")], Bool, None),
         rule(vec![K("rule"), Each, K("unwrap")], Bool, None),
         rule(vec![K("rule"), Each, K("italic")], Bool, None),
-        rule(vec![K("rule"), Each, K("size")], Str, Some(Constraint::Length)),
-        rule(vec![K("rule"), Each, K("tracking")], Str, Some(Constraint::Length)),
-        rule(vec![K("rule"), Each, K("leading")], Str, Some(Constraint::Length)),
-        rule(vec![K("rule"), Each, K("space-before")], Str, Some(Constraint::Length)),
-        rule(vec![K("rule"), Each, K("space-after")], Str, Some(Constraint::Length)),
-        rule(vec![K("rule"), Each, K("indent")], Str, Some(Constraint::Length)),
-        rule(vec![K("rule"), Each, K("margin-left")], Str, Some(Constraint::Length)),
-        rule(vec![K("rule"), Each, K("margin-right")], Str, Some(Constraint::Length)),
+        rule(
+            vec![K("rule"), Each, K("size")],
+            Str,
+            Some(Constraint::Length),
+        ),
+        rule(
+            vec![K("rule"), Each, K("tracking")],
+            Str,
+            Some(Constraint::Length),
+        ),
+        rule(
+            vec![K("rule"), Each, K("leading")],
+            Str,
+            Some(Constraint::Length),
+        ),
+        rule(
+            vec![K("rule"), Each, K("space-before")],
+            Str,
+            Some(Constraint::Length),
+        ),
+        rule(
+            vec![K("rule"), Each, K("space-after")],
+            Str,
+            Some(Constraint::Length),
+        ),
+        rule(
+            vec![K("rule"), Each, K("indent")],
+            Str,
+            Some(Constraint::Length),
+        ),
+        rule(
+            vec![K("rule"), Each, K("margin-left")],
+            Str,
+            Some(Constraint::Length),
+        ),
+        rule(
+            vec![K("rule"), Each, K("margin-right")],
+            Str,
+            Some(Constraint::Length),
+        ),
         // ── [rule.raw] ────────────────────────────────────────────────────
         // Not `before`/`after`/`wrap`'s sibling `preamble`: that field is
         // never interpolated (it is emitted once globally, not per matched
@@ -400,12 +479,36 @@ pub fn schema() -> Schema<Constraint> {
             Some(Constraint::Interpolation { node_scoped: true }),
         ),
         // ── [rule.box] ────────────────────────────────────────────────────
-        rule(vec![K("rule"), Each, K("box"), K("fill")], Str, Some(Constraint::Color)),
-        rule(vec![K("rule"), Each, K("box"), K("stroke")], Str, Some(Constraint::Color)),
-        rule(vec![K("rule"), Each, K("box"), K("stroke-width")], Str, Some(Constraint::Length)),
-        rule(vec![K("rule"), Each, K("box"), K("padding")], Str, Some(Constraint::Length)),
-        rule(vec![K("rule"), Each, K("box"), K("radius")], Str, Some(Constraint::Length)),
-        rule(vec![K("rule"), Each, K("box"), K("width")], Str, Some(Constraint::Length)),
+        rule(
+            vec![K("rule"), Each, K("box"), K("fill")],
+            Str,
+            Some(Constraint::Color),
+        ),
+        rule(
+            vec![K("rule"), Each, K("box"), K("stroke")],
+            Str,
+            Some(Constraint::Color),
+        ),
+        rule(
+            vec![K("rule"), Each, K("box"), K("stroke-width")],
+            Str,
+            Some(Constraint::Length),
+        ),
+        rule(
+            vec![K("rule"), Each, K("box"), K("padding")],
+            Str,
+            Some(Constraint::Length),
+        ),
+        rule(
+            vec![K("rule"), Each, K("box"), K("radius")],
+            Str,
+            Some(Constraint::Length),
+        ),
+        rule(
+            vec![K("rule"), Each, K("box"), K("width")],
+            Str,
+            Some(Constraint::Length),
+        ),
     ])
 }
 
@@ -533,11 +636,7 @@ fn render_path(path: &[Seg], extra_key: Option<&str>) -> String {
         }
         out.push_str(k);
     }
-    if out.is_empty() {
-        "<root>".into()
-    } else {
-        out
-    }
+    if out.is_empty() { "<root>".into() } else { out }
 }
 
 /// Fail if any finding is a rejection, listing every one.
@@ -561,7 +660,7 @@ mod tests {
     use super::*;
 
     fn findings(toml: &str) -> Vec<Finding> {
-        let doc = fig::Document::parse(toml.as_bytes(), fig::Format::Toml).unwrap();
+        let doc = fig::Document::parse(toml.as_bytes(), fig_toml::format().unwrap()).unwrap();
         check(&doc.to_value().unwrap())
     }
 
@@ -619,7 +718,10 @@ mod tests {
             std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/examples/report.toml"))
                 .unwrap();
         let f = findings(&text);
-        assert!(f.is_empty(), "the example config must validate cleanly: {f:?}");
+        assert!(
+            f.is_empty(),
+            "the example config must validate cleanly: {f:?}"
+        );
     }
 
     /// The other shipped example is the one that actually uses `{{...}}`
@@ -633,7 +735,10 @@ mod tests {
         ))
         .unwrap();
         let f = findings(&text);
-        assert!(f.is_empty(), "the example config must validate cleanly: {f:?}");
+        assert!(
+            f.is_empty(),
+            "the example config must validate cleanly: {f:?}"
+        );
     }
 
     #[test]
@@ -642,7 +747,10 @@ mod tests {
         assert_eq!(f.len(), 1, "{f:?}");
         assert_eq!(f[0].path, "rule[0].raw.before");
         assert!(f[0].validation.is_reject());
-        assert_eq!(f[0].validation.issue().unwrap().suggestion.as_deref(), Some("attr"));
+        assert_eq!(
+            f[0].validation.issue().unwrap().suggestion.as_deref(),
+            Some("attr")
+        );
     }
 
     #[test]
@@ -694,7 +802,10 @@ mod tests {
         let f = findings("[document]\ntitle-page = \"{{doc.titel}}\"\n");
         assert_eq!(f.len(), 1, "{f:?}");
         assert!(f[0].validation.is_reject());
-        assert_eq!(f[0].validation.issue().unwrap().suggestion.as_deref(), Some("title"));
+        assert_eq!(
+            f[0].validation.issue().unwrap().suggestion.as_deref(),
+            Some("title")
+        );
     }
 
     /// `raw.preamble` is never interpolated (see `crate::typst_emit::emit`),

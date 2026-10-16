@@ -21,10 +21,10 @@ twig-export report.md -c style.toml --directives --explain       # why didn't my
 ## Why a separate project
 
 Twig's charter rules out first-class presentation formats — but its
-architecture already anticipates one. `src/format.zig` splits `Format` (what
-Twig can *parse*) from `Target` (what Twig can *write*) precisely so an
-**export-only** target is expressible, and both `format.zig` and `DESIGN.md`
-name PDF as the motivating case. This crate is that target, built outside
+architecture already anticipates one. `crates/twig/src/format.rs` splits
+`Format` (what Twig can *parse*) from `Target` (what Twig can *write*)
+precisely so an **export-only** target is expressible, and Twig's
+`docs/DESIGN.md` names PDF as the motivating case. This crate is that target, built outside
 Twig's tree where the presentation concerns belong. It consumes Twig's
 published AST and adds nothing to Twig's parse surface.
 
@@ -49,7 +49,7 @@ anyone who wants to take the result further by hand.
 ## The config
 
 Written in any language [`fig`](https://github.com/diaryx-org/fig) speaks —
-`.toml`, `.yaml`, `.json`, `.fig` — because the same parser reads the
+`.toml`, `.yaml`, `.json`, `.figl` — because the same parser reads the
 document's frontmatter, whose language is whatever the author's fence tag said.
 
 A rule's `select` is a **Twig selector**, resolved by Twig's own engine. So

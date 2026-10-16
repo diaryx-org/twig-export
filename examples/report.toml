@@ -1,7 +1,7 @@
 # A twig-export style config.
 #
 # Parsed by `fig`, so this same config could be written as .yaml, .json, or
-# .fig — the extension picks the parser.
+# .figl — the extension picks the parser.
 #
 # Two things a document can drive:
 #   * `document.from-metadata` binds frontmatter keys to page setup.

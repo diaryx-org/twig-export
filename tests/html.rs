@@ -17,9 +17,9 @@ fn the_example_compiles_to_real_html() {
 
     let rendered = render(
         &source,
-        twig::Format::Markdown,
+        twig_markdown::format(),
         &cfg,
-        twig::MarkdownExtensions {
+        twig_export::Extensions {
             directives: true,
             ..Default::default()
         },
@@ -75,9 +75,9 @@ Text with characters that must be escaped: # $ * _ ` < > @ ~ [ ] = - + / \" '
 ";
     let rendered = render(
         source,
-        twig::Format::Markdown,
+        twig_markdown::format(),
         &Config::default(),
-        twig::MarkdownExtensions::default(),
+        twig_export::Extensions::default(),
     )
     .unwrap();
 

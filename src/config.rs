@@ -2,9 +2,9 @@
 //! styling.
 //!
 //! ── Selectors are twig's, not ours ─────────────────────────────────────────
-//! A rule's `select` is a twig CSS-lite selector (`src/ast/select.zig`),
-//! resolved by twig's own engine. So anything you can find with
-//! `twig query 'container[name=note][class~=warn]'` is something you can
+//! A rule's `select` is a twig CSS-lite selector (twig-kit's
+//! `src/ast/select.rs`), resolved by twig's own engine. So anything
+//! `twig query 'container[name=note][class~=warn]'` finds is something you can
 //! style, with identical semantics, and there is no second grammar to learn or
 //! to drift. See [`crate::doc`] for how ids are threaded across.
 //!
@@ -196,7 +196,7 @@ pub struct Rule {
 
 impl Config {
     /// Load a config from any language fig speaks — `.toml`, `.yaml`, `.json`,
-    /// `.fig` — detected from the extension.
+    /// `.figl` — detected from the extension.
     ///
     /// Using fig here rather than a single hardcoded format is deliberate:
     /// the same parser reads the document's frontmatter (see [`crate::meta`]),
@@ -275,7 +275,11 @@ mod tests {
     #[test]
     fn a_warning_loads_successfully_and_is_reported() {
         let (cfg, warnings) = Config::parse("[document]\npaper = \"a9\"\n", "toml").unwrap();
-        assert_eq!(cfg.document.paper.as_deref(), Some("a9"), "value passes through");
+        assert_eq!(
+            cfg.document.paper.as_deref(),
+            Some("a9"),
+            "value passes through"
+        );
         assert_eq!(warnings.len(), 1);
         assert!(!warnings[0].validation.is_reject());
     }
