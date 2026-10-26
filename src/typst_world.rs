@@ -139,3 +139,80 @@ impl World for ExportWorld {
         None
     }
 }
+
+/// The two things diaryx-org's Typst fork adds, used the way the content
+/// route will: a template evaluated as Typst, called by `compile_with` with a
+/// body built in Rust, whose text carries a raw-range span into a Markdown
+/// file Typst never reads. If a rebase of the fork drops either patch, this
+/// stops compiling; if `compile_with` stops laying out the body, or a glyph
+/// stops carrying its span, it fails.
+#[cfg(all(test, feature = "pdf"))]
+mod fork_tests {
+    use super::*;
+    use typst::comemo::Track;
+    use typst::foundations::{Context, Func, Value};
+    use typst::layout::{Frame, FrameItem};
+    use typst::syntax::{Span, SpanKind};
+    use typst::text::TextElem;
+    use typst_layout::PagedDocument;
+
+    const TEMPLATE: &str = "#let book(body) = { set page(width: 10cm, height: auto); body }";
+
+    fn spans(frame: &Frame, out: &mut Vec<(Span, String)>) {
+        for (_, item) in frame.items() {
+            match item {
+                FrameItem::Group(g) => spans(&g.frame, out),
+                FrameItem::Text(text) => {
+                    for g in &text.glyphs {
+                        out.push((g.span.0, text.text[g.range()].to_string()));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn compile_with_lays_out_a_body_with_spans_into_markdown() {
+        let world = ExportWorld::new(TEMPLATE, Features::default());
+        let md =
+            RootedPath::new(VirtualRoot::Project, VirtualPath::new("doc.md").unwrap()).intern();
+        // "Hello" at bytes 2..7 of `# Hello`.
+        let body = TextElem::packed("Hello").spanned(Span::from_range(md, 2..7));
+
+        let result = typst::compile_with::<PagedDocument>(&world, &|engine, module| {
+            let book: Func = module
+                .scope()
+                .get("book")
+                .expect("the template defines `book`")
+                .read()
+                .clone()
+                .cast()
+                .expect("`book` is a function");
+            Ok(book
+                .call(
+                    engine,
+                    Context::none().track(),
+                    [Value::Content(body.clone())],
+                )?
+                .display())
+        });
+        let doc = result.output.expect("the template and body compile");
+
+        let mut glyphs = Vec::new();
+        for page in doc.pages() {
+            spans(&page.frame, &mut glyphs);
+        }
+        let text: String = glyphs.iter().map(|(_, t)| t.as_str()).collect();
+        assert_eq!(text, "Hello");
+        for (span, _) in &glyphs {
+            match span.get() {
+                SpanKind::Range { id, range } => {
+                    assert_eq!(id, md);
+                    assert_eq!(range, 2..7);
+                }
+                other => panic!("glyph span is not the Markdown range: {other:?}"),
+            }
+        }
+    }
+}
