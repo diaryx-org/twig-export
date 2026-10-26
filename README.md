@@ -3,7 +3,7 @@ title: Twig Export
 author: adammharris
 created: 2026-08-13T16:28:00-07:00
 updated: 2026-08-13T17:40:00-07:00
-contents: ['[DESIGN](/DESIGN.md)', '[Proposals](/docs/proposals/proposals.md)']
+contents: ['[DESIGN](/DESIGN.md)', '[Proposals](/docs/proposals/proposals.md)', '[Tasks](/docs/tasks/tasks.md)']
 ---
 
 # Twig Export
