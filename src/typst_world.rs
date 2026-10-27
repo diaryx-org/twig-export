@@ -15,6 +15,8 @@
 //! feature, only project-relative paths resolve and a package import fails
 //! with "not found" — the crate still emits and compiles plain `.typ`.
 
+use std::sync::Arc;
+
 #[cfg(not(feature = "network"))]
 use typst::diag::FileError;
 use typst::diag::FileResult;
@@ -34,7 +36,7 @@ use typst_kit::{
 
 pub(crate) struct ExportWorld {
     library: LazyHash<Library>,
-    fonts: FontStore,
+    fonts: Arc<FontStore>,
     main: Source,
     /// The folder a document's relative paths (its pictures) resolve against.
     #[cfg(not(feature = "network"))]
@@ -55,14 +57,18 @@ impl ExportWorld {
     /// document's own folder, for an editor that has a document open
     /// wherever it was launched.
     pub(crate) fn rooted(typ: &str, features: Features, root: &std::path::Path) -> Self {
-        // Embedded first, then system. Order is precedence, so a document
-        // renders identically on a machine with no fonts installed and a
-        // machine with a thousand — the embedded Libertinus / New Computer
-        // Modern / DejaVu set always wins for the names it provides.
-        let mut fonts = FontStore::new();
-        fonts.extend(typst_kit::fonts::embedded());
-        fonts.extend(typst_kit::fonts::system());
+        Self::with_fonts(typ, features, root, Arc::new(fonts()))
+    }
 
+    /// A world over `typ` rooted at `root`, in `fonts` read already: for a
+    /// caller that compiles again and again and reads the system's fonts
+    /// once.
+    pub(crate) fn with_fonts(
+        typ: &str,
+        features: Features,
+        root: &std::path::Path,
+        fonts: Arc<FontStore>,
+    ) -> Self {
         let vpath = VirtualPath::new("main.typ").expect("main.typ is a valid virtual path");
         let id = RootedPath::new(VirtualRoot::Project, vpath).intern();
 
@@ -93,6 +99,17 @@ impl ExportWorld {
     pub(crate) fn main_text(&self) -> &str {
         self.main.text()
     }
+}
+
+/// The fonts a document is set in: embedded first, then the system's. Order
+/// is precedence, so a document renders identically on a machine with no
+/// fonts installed and a machine with a thousand — the embedded Libertinus /
+/// New Computer Modern / DejaVu set always wins for the names it provides.
+pub(crate) fn fonts() -> FontStore {
+    let mut fonts = FontStore::new();
+    fonts.extend(typst_kit::fonts::embedded());
+    fonts.extend(typst_kit::fonts::system());
+    fonts
 }
 
 impl World for ExportWorld {
