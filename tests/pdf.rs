@@ -134,3 +134,32 @@ fn a_document_parsed_by_the_caller_renders_and_compiles() {
     let bytes = pdf::compile(&rendered.typst).expect("a caller-parsed document compiles");
     assert!(bytes.starts_with(b"%PDF-"));
 }
+
+/// A picture Typst cannot read as a file — a `data:` URL, a remote URL —
+/// does not stop the document compiling: a `data:` URL's bytes are drawn,
+/// a remote one's alt text stands in.
+#[test]
+fn a_data_url_picture_is_drawn_and_a_remote_one_is_its_alt_text() {
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><circle cx="5" cy="5" r="4"/></svg>"#;
+    use base64::Engine as _;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(svg);
+    let source = format!(
+        "![a dot](data:image/svg+xml;base64,{b64})\n\n![far away](https://example.com/x.png)\n"
+    );
+    let rendered = render(
+        &source,
+        twig_markdown::format(),
+        &Config::default(),
+        Default::default(),
+    )
+    .unwrap();
+    assert!(
+        rendered.typst.contains("#image(bytes(("),
+        "{}",
+        rendered.typst
+    );
+    assert!(rendered.typst.contains("far away"));
+    assert!(!rendered.typst.contains("example.com"));
+    let bytes = pdf::compile(&rendered.typst).expect("the pictures do not stop the compile");
+    assert!(bytes.starts_with(b"%PDF-"));
+}
