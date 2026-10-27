@@ -28,7 +28,7 @@ html = ["dep:typst", "dep:typst-html", "dep:typst-kit"]
 network = ["dep:typst-kit", "typst-kit/system-files", "typst-kit/system-downloader"]
 
 [dependencies]
-# The document AST. Published as `twig-doc`; imported as `twig`. twig 6 is
+# The document AST. Published as `twig-doc`; imported as `twig`. twig 7 is
 # pure Rust and its core names no language: each format twig-export reads is
 # a crate of its own whose `format()` registers it on first use.
 #
@@ -36,11 +36,11 @@ network = ["dep:typst-kit", "typst-kit/system-files", "typst-kit/system-download
 # frontmatter is read off the AST's `metadata` node, see src/meta.rs) and a
 # document's `twig` frontmatter key choosing its own parse features, which
 # would let a document turn on syntax the command line did not ask for.
-twig-doc = { version = "6", default-features = false }
-twig-markdown = "6"
-twig-djot = "6"
-twig-html = "6"
-twig-xml = "6"
+twig-doc = { version = "7", default-features = false }
+twig-markdown = "7"
+twig-djot = "7"
+twig-html = "7"
+twig-xml = "7"
 # Parses the config file AND the frontmatter. `metadata.lang` names exactly the
 # languages fig speaks, so one parser covers both. fig's core names no
 # language (6.0): each is a crate that registers it, brought here without its
@@ -54,6 +54,8 @@ fig-zon = { version = "7", default-features = false, features = ["fig"] }
 fig-figl = { version = "7", default-features = false, features = ["fig"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# A picture given as a `data:` URL, decoded into the bytes `#image` reads.
+base64 = "0.22"
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
 

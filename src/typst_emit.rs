@@ -529,10 +529,17 @@ fn emit_inline(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
             let mut alt = String::new();
             emit_inlines(&mut alt, doc, res, &n.children);
             let alt = strip_markup(&alt);
-            if alt.is_empty() {
-                let _ = write!(inner, "#image({})", quote(dest));
-            } else {
-                let _ = write!(inner, "#image({}, alt: {})", quote(dest), quote(&alt));
+            match image_source(dest) {
+                Some(src) if alt.is_empty() => {
+                    let _ = write!(inner, "#image({src})");
+                }
+                Some(src) => {
+                    let _ = write!(inner, "#image({src}, alt: {})", quote(&alt));
+                }
+                // Nothing Typst can read: the alt text stands in, rather
+                // than the whole document failing to compile.
+                None if alt.is_empty() => inner.push_str(&escape(dest)),
+                None => inner.push_str(&escape(&alt)),
             }
         }
         "footnote_reference" => {
@@ -751,6 +758,62 @@ fn escape(s: &str) -> String {
 }
 
 /// A Typst string literal.
+/// What `#image` reads a picture from: a path, resolved against the
+/// document's folder by the `World`; or a `data:` URL's bytes, written into
+/// the source, since Typst reads files and not URLs. `None` for what Typst
+/// cannot read at all: a remote URL (Typst does not fetch), or a `data:`
+/// URL that does not decode.
+fn image_source(dest: &str) -> Option<String> {
+    use base64::Engine as _;
+    let lower = dest.get(..8).unwrap_or(dest).to_ascii_lowercase();
+    if lower.starts_with("http://") || lower.starts_with("https://") {
+        return None;
+    }
+    let Some(url) = dest.strip_prefix("data:") else {
+        return Some(quote(dest));
+    };
+    let (meta, data) = url.split_once(',')?;
+    let bytes = if meta.ends_with(";base64") {
+        let clean: String = data.chars().filter(|c| !c.is_whitespace()).collect();
+        base64::engine::general_purpose::STANDARD
+            .decode(clean)
+            .ok()?
+    } else {
+        percent_decode(data)?
+    };
+    let mut out = String::from("bytes((");
+    for (i, b) in bytes.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        let _ = write!(out, "{b}");
+    }
+    // A one-element array needs its comma, or the parentheses are grouping.
+    if bytes.len() == 1 {
+        out.push(',');
+    }
+    out.push_str("))");
+    Some(out)
+}
+
+/// A `data:` URL's percent-encoded body as bytes.
+fn percent_decode(s: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(s.len());
+    let b = s.as_bytes();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' {
+            let hex = s.get(i + 1..i + 3)?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    Some(out)
+}
+
 fn quote(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');

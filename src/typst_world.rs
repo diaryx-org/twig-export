@@ -36,12 +36,25 @@ pub(crate) struct ExportWorld {
     library: LazyHash<Library>,
     fonts: FontStore,
     main: Source,
+    /// The folder a document's relative paths (its pictures) resolve against.
+    #[cfg(not(feature = "network"))]
+    root: std::path::PathBuf,
     #[cfg(feature = "network")]
     files: FileStore<SystemFiles>,
 }
 
 impl ExportWorld {
+    /// A world over `typ` whose relative paths resolve against the working
+    /// directory.
     pub(crate) fn new(typ: &str, features: Features) -> Self {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
+        Self::rooted(typ, features, &cwd)
+    }
+
+    /// A world over `typ` whose relative paths resolve against `root`: the
+    /// document's own folder, for an editor that has a document open
+    /// wherever it was launched.
+    pub(crate) fn rooted(typ: &str, features: Features, root: &std::path::Path) -> Self {
         // Embedded first, then system. Order is precedence, so a document
         // renders identically on a machine with no fonts installed and a
         // machine with a thousand — the embedded Libertinus / New Computer
@@ -57,7 +70,7 @@ impl ExportWorld {
 
         #[cfg(feature = "network")]
         let files = FileStore::new(SystemFiles::new(
-            FsRoot::new(std::env::current_dir().unwrap_or_else(|_| ".".into())),
+            FsRoot::new(root.to_path_buf()),
             SystemPackages::new(SystemDownloader::new(concat!(
                 "twig-export/",
                 env!("CARGO_PKG_VERSION")
@@ -68,6 +81,8 @@ impl ExportWorld {
             library: LazyHash::new(library),
             fonts,
             main: Source::new(id, typ.into()),
+            #[cfg(not(feature = "network"))]
+            root: root.to_path_buf(),
             #[cfg(feature = "network")]
             files,
         }
@@ -114,7 +129,7 @@ impl World for ExportWorld {
     /// Besides `#import`s of `@preview/...` packages (only resolved with the
     /// `network` feature), the only files Typst asks for are the images a
     /// document links to and any files a package itself reads. Both resolve
-    /// against the working directory / the package's own root.
+    /// against the world's root / the package's own root.
     #[cfg(feature = "network")]
     fn file(&self, id: FileId) -> FileResult<Bytes> {
         self.files.file(id)
@@ -122,10 +137,10 @@ impl World for ExportWorld {
 
     #[cfg(not(feature = "network"))]
     fn file(&self, id: FileId) -> FileResult<Bytes> {
-        let path = std::path::Path::new(id.vpath().get_without_slash());
-        std::fs::read(path)
+        let path = self.root.join(id.vpath().get_without_slash());
+        std::fs::read(&path)
             .map(Bytes::new)
-            .map_err(|e| FileError::from_io(e, path))
+            .map_err(|e| FileError::from_io(e, &path))
     }
 
     fn font(&self, index: usize) -> Option<Font> {

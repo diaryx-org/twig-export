@@ -129,8 +129,18 @@ pub fn render(
     cfg: &config::Config,
     extensions: Extensions,
 ) -> Result<Rendered> {
-    let mut td = parse(source, format, extensions)?;
+    let td = parse(source, format, extensions)?;
+    render_parsed(td, source, cfg)
+}
 
+/// Apply `cfg` to `td`, a document already parsed from `source`, and emit
+/// Typst. For a caller that parses with features of its own, as an editor
+/// does, so the export reads the document the editor reads.
+pub fn render_parsed(
+    mut td: twig::Document,
+    source: &str,
+    cfg: &config::Config,
+) -> Result<Rendered> {
     let doc = doc::Doc::ingest(&mut td, source)?;
 
     // The document's frontmatter can override document-level settings, but

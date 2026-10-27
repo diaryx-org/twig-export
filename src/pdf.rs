@@ -12,15 +12,27 @@
 //! reproducible-clock stub — is shared with the `html` backend; see
 //! [`crate::typst_world`].
 
+use std::path::Path;
+
 use anyhow::{Result, anyhow, bail};
 use typst::{Features, WorldExt};
 
 use crate::typst_world::ExportWorld;
 
-/// Compile Typst source to PDF bytes.
+/// Compile Typst source to PDF bytes, its relative paths (pictures)
+/// resolved against the working directory.
 pub fn compile(typ: &str) -> Result<Vec<u8>> {
-    let world = ExportWorld::new(typ, Features::default());
-    let result = typst::compile::<typst_layout::PagedDocument>(&world);
+    write(&ExportWorld::new(typ, Features::default()))
+}
+
+/// Compile Typst source to PDF bytes, its relative paths resolved against
+/// `root`: the folder of the document it was rendered from.
+pub fn compile_in(typ: &str, root: &Path) -> Result<Vec<u8>> {
+    write(&ExportWorld::rooted(typ, Features::default(), root))
+}
+
+fn write(world: &ExportWorld) -> Result<Vec<u8>> {
+    let result = typst::compile::<typst_layout::PagedDocument>(world);
 
     let document = match result.output {
         Ok(doc) => doc,
