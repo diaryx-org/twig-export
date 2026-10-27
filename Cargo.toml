@@ -16,6 +16,9 @@ default = ["pdf", "network"]
 # emits `.typ`, which is where all the interesting logic lives and where every
 # golden test runs.
 pdf = ["dep:typst", "dep:typst-pdf", "dep:typst-kit", "dep:typst-layout"]
+# `pdf::Typesetter::svg`: each page as an SVG, for a preview to draw what the
+# PDF will be without reading the PDF back.
+svg = ["pdf", "dep:typst-svg"]
 # Typst's HTML export, via `typst-html`. Off by default, unlike `pdf`: Typst
 # itself calls HTML export "under active development and incomplete" and
 # refuses to compile to it without this flag set explicitly. See src/html.rs.
@@ -72,6 +75,7 @@ typst-kit = { git = "https://github.com/diaryx-org/typst", branch = "twig", opti
 # lives here and is not re-exported by the `typst` facade.
 typst-layout = { git = "https://github.com/diaryx-org/typst", branch = "twig", optional = true }
 typst-html = { git = "https://github.com/diaryx-org/typst", branch = "twig", optional = true }
+typst-svg = { git = "https://github.com/diaryx-org/typst", branch = "twig", optional = true }
 # 0.5 is on fig 7. The library alone: its default `cli` feature is the
 # command line.
 fig-schema = { version = "0.5", default-features = false }
