@@ -263,15 +263,19 @@ impl Layout {
                                 .transform(ts);
                         let width = g.x_advance.at(size).to_pt() * ts.sx.get();
                         cursor += g.x_advance.at(size);
-                        let drawn = &text.text[g.range()];
+                        // A zero-width space the emitter wrote where a long
+                        // run may break (`typst_emit::breaks`) is shaped into
+                        // the cluster before it; it draws nothing and is not
+                        // in the source.
+                        let drawn = text.text[g.range()].replace('\u{200B}', "");
                         out.push(Glyph {
                             x: at.x.to_pt(),
                             baseline: at.y.to_pt(),
                             width,
                             ascent: metrics.ascender.at(size).to_pt() * scale,
                             descent: -metrics.descender.at(size).to_pt() * scale,
-                            text: drawn.to_string(),
                             source: self.source(g.span, drawn.len()),
+                            text: drawn,
                         });
                     }
                 }

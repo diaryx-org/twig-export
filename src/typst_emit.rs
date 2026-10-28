@@ -80,20 +80,44 @@ impl<'a> Cx<'a> {
     /// Node `idx`'s text `s`: escaped markup, or a hole for it. A hole ends
     /// in `;`, so whatever follows it is markup again, never more of the
     /// expression.
+    ///
+    /// A run of text with nowhere to break that is longer than a word could
+    /// reasonably be has a zero-width space written between its characters
+    /// ([`breaks`]), in the markup: Typst breaks a line only where the text
+    /// lets it, and such a run would otherwise run off the page.
     fn text(&self, doc: &Doc, idx: Idx, s: &str) -> String {
         match self.words {
-            None => escape(s),
+            None => {
+                let mut out = String::new();
+                let mut from = 0;
+                for at in breaks(s) {
+                    out.push_str(&escape(&s[from..at]));
+                    out.push(ZWSP);
+                    from = at;
+                }
+                out.push_str(&escape(&s[from..]));
+                out
+            }
             Some(_) if s.is_empty() => String::new(),
             Some(words) => {
                 let mut words = words.borrow_mut();
                 let mut out = String::new();
-                for (text, at) in runs(doc, idx, s) {
+                let mut hole = |text: &str, at: usize, out: &mut String| {
                     words.push(Word {
                         text: text.to_string(),
                         at,
                         code: None,
                     });
                     let _ = write!(out, "#{WORDS}.at({});", words.len() - 1);
+                };
+                for (text, at) in runs(doc, idx, s) {
+                    let mut from = 0;
+                    for b in breaks(text) {
+                        hole(&text[from..b], at + from, &mut out);
+                        out.push(ZWSP);
+                        from = b;
+                    }
+                    hole(&text[from..], at + from, &mut out);
                 }
                 out
             }
@@ -150,6 +174,42 @@ impl<'a> Cx<'a> {
             words: None,
         }
     }
+}
+
+/// A zero-width space: where Typst may break a line, drawing nothing.
+const ZWSP: char = '\u{200B}';
+
+/// The longest a run with nowhere to break may be, in characters, before
+/// it may break anywhere: longer than any word, so a word is never broken.
+const LONGEST: usize = 30;
+
+/// Where in `s` a line may break inside a run of characters with nowhere
+/// else to break (no whitespace) that is longer than [`LONGEST`]: between
+/// each of its characters, as CSS's `overflow-wrap: anywhere` lets a
+/// browser break it. Byte offsets, in order.
+fn breaks(s: &str) -> Vec<usize> {
+    let mut out = Vec::new();
+    for (start, token) in tokens(s) {
+        if token.chars().count() > LONGEST {
+            out.extend(token.char_indices().skip(1).map(|(i, _)| start + i));
+        }
+    }
+    out
+}
+
+/// The runs of `s` between whitespace, with the byte each starts at.
+fn tokens(s: &str) -> impl Iterator<Item = (usize, &str)> {
+    s.split(char::is_whitespace)
+        .scan(0, move |pos, token| {
+            let start = *pos;
+            *pos += token.len()
+                + s[start + token.len()..]
+                    .chars()
+                    .next()
+                    .map_or(0, char::len_utf8);
+            Some((start, token))
+        })
+        .filter(|(_, t)| !t.is_empty())
 }
 
 /// Node `idx`'s text `s` as runs that each stand whole in the source, and
@@ -1224,6 +1284,21 @@ mod tests {
         assert_eq!(escape("a*b_c#d"), "a\\*b\\_c\\#d");
         assert_eq!(escape("wait... ok."), "wait\\.\\.. ok.");
         assert_eq!(escape("100% of $5"), "100% of \\$5");
+    }
+
+    #[test]
+    fn only_a_run_longer_than_a_word_may_break_anywhere() {
+        assert!(breaks("internationalization, and a sentence.").is_empty());
+        let word = "x".repeat(LONGEST);
+        assert!(
+            breaks(&word).is_empty(),
+            "a run as long as a word stays whole"
+        );
+        let long = format!("a {}!", "y".repeat(LONGEST));
+        let b = breaks(&long);
+        assert_eq!(b.len(), LONGEST, "between each of its characters");
+        assert_eq!(b[0], 3);
+        assert_eq!(*b.last().unwrap(), long.len() - 1);
     }
 
     #[test]

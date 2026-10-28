@@ -213,3 +213,24 @@ fn an_edit_in_one_block_leaves_the_next_blocks_spans() {
     assert_eq!((a.as_deref(), b.as_deref()), (Some("S"), Some("S")));
     assert_eq!(rb.unwrap().start - ra.unwrap().start, ", longer".len());
 }
+
+/// A run longer than any word, with nowhere to break, breaks inside itself
+/// rather than run off the page: on more than one line, and no glyph past
+/// the page's right margin; set as words, each glyph still names its own
+/// bytes, and the markup sets the same pages.
+#[test]
+fn a_run_too_long_for_a_line_breaks_inside_it() {
+    let source = format!("This is a test{} and more words.\n", "!".repeat(300));
+    let (markup, layout) = both(&source, &Config::default(), Extensions::default());
+    assert_eq!(layout.pdf().unwrap(), markup);
+    let pages = layout.pages();
+    let page = &pages[0];
+    let named: Vec<_> = page.glyphs.iter().filter(|g| g.source.is_some()).collect();
+    let right = named.iter().map(|g| g.x + g.width).fold(0.0, f64::max);
+    assert!(right <= page.width, "a glyph at {right}, past the page");
+    let lines: std::collections::BTreeSet<i64> =
+        named.iter().map(|g| g.baseline.round() as i64).collect();
+    assert!(lines.len() >= 3, "{} lines", lines.len());
+    let (_, named, exact) = traced(&layout, &source);
+    assert_eq!(exact, named);
+}
