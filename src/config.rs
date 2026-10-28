@@ -63,6 +63,12 @@ pub struct Document {
     pub size: Option<String>,
     pub leading: Option<String>,
     pub align: Option<crate::style::Align>,
+    /// What a run of text too wide for a line of its own does, where it has
+    /// nowhere to break (a long URL, a string of punctuation): `"normal"`
+    /// overflows the line, Typst's default; `"break-word"` breaks it between
+    /// characters where nothing else fits. Typst's `par.overflow-wrap`, which
+    /// diaryx-org's fork adds.
+    pub overflow_wrap: Option<String>,
     /// Base language, for hyphenation and quote marks (`"en"`, `"de"`).
     pub lang: Option<String>,
     pub title: Option<String>,
@@ -131,6 +137,7 @@ impl Default for Document {
             size: Some("11pt".into()),
             leading: None,
             align: None,
+            overflow_wrap: None,
             lang: Some("en".into()),
             title: None,
             author: None,
@@ -158,6 +165,7 @@ impl Document {
             "font" => self.font.clone()?,
             "size" => self.size.clone()?,
             "leading" => self.leading.clone()?,
+            "overflow-wrap" => self.overflow_wrap.clone()?,
             "lang" => self.lang.clone()?,
             "title" => self.title.clone()?,
             "author" => self.author.clone()?,
@@ -177,6 +185,7 @@ pub const DOC_FIELD_NAMES: &[&str] = &[
     "font",
     "size",
     "leading",
+    "overflow-wrap",
     "lang",
     "title",
     "author",

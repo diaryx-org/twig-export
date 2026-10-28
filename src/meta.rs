@@ -110,6 +110,7 @@ pub fn apply_metadata(doc: &mut Document, meta: &BTreeMap<String, Json>) -> Vec<
             "font" => doc.font = as_string(),
             "size" => doc.size = as_string(),
             "leading" => doc.leading = as_string(),
+            "overflow-wrap" | "overflow_wrap" => doc.overflow_wrap = as_string(),
             "lang" => doc.lang = as_string(),
             "title" => doc.title = as_string(),
             "author" => doc.author = as_string(),

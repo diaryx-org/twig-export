@@ -213,3 +213,47 @@ fn an_edit_in_one_block_leaves_the_next_blocks_spans() {
     assert_eq!((a.as_deref(), b.as_deref()), (Some("S"), Some("S")));
     assert_eq!(rb.unwrap().start - ra.unwrap().start, ", longer".len());
 }
+
+/// A run longer than a line with nowhere to break: past the page's right
+/// edge by default, as Typst sets it; within it with `overflow-wrap =
+/// "break-word"`, on lines of its own, every glyph still naming its bytes.
+#[test]
+fn a_run_too_long_for_a_line_breaks_with_break_word() {
+    let source = format!("This is a test{} and more words.\n", "!".repeat(300));
+    let lay_out = |wrap: Option<&str>| {
+        let mut cfg = Config::default();
+        cfg.document.overflow_wrap = wrap.map(str::to_string);
+        let (_, layout) = both(&source, &cfg, Extensions::default());
+        layout
+    };
+    let right = |layout: &Layout| {
+        let pages = layout.pages();
+        let page = &pages[0];
+        let right = page
+            .glyphs
+            .iter()
+            .filter(|g| g.source.is_some())
+            .map(|g| g.x + g.width)
+            .fold(0.0, f64::max);
+        (right, page.width)
+    };
+
+    let (over, width) = right(&lay_out(None));
+    assert!(
+        over > width,
+        "by default the run overflows: {over} of {width}"
+    );
+
+    let wrapped = lay_out(Some("break-word"));
+    let (inside, width) = right(&wrapped);
+    assert!(inside <= width, "a glyph at {inside}, past the page");
+    let lines: std::collections::BTreeSet<i64> = wrapped.pages()[0]
+        .glyphs
+        .iter()
+        .filter(|g| g.source.is_some())
+        .map(|g| g.baseline.round() as i64)
+        .collect();
+    assert!(lines.len() >= 3, "{} lines", lines.len());
+    let (_, named, exact) = traced(&wrapped, &source);
+    assert_eq!(exact, named);
+}

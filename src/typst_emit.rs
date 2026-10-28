@@ -275,6 +275,9 @@ fn preamble(out: &mut String, cfg: &Config, resolved: &Resolved) {
     if let Some(a) = d.align {
         par_args.push(format!("justify: {}", a == Align::Justify));
     }
+    if let Some(w) = &d.overflow_wrap {
+        par_args.push(format!("overflow-wrap: {}", quote(w)));
+    }
     if !par_args.is_empty() {
         let _ = writeln!(out, "#set par({})", par_args.join(", "));
     }

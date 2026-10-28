@@ -296,6 +296,7 @@ pub const DOCUMENT_KEYS: &[&str] = &[
     "size",
     "leading",
     "align",
+    "overflow-wrap",
     "lang",
     "title",
     "author",
@@ -323,6 +324,9 @@ const WEIGHTS: &[&str] = &[
     "thin", "light", "regular", "medium", "semibold", "bold", "black",
 ];
 const ALIGNS: &[&str] = &["left", "center", "right", "justify"];
+
+/// What `document.overflow-wrap` may be: Typst's `par.overflow-wrap`.
+const OVERFLOW_WRAPS: &[&str] = &["normal", "break-word"];
 const BREAKS: &[&str] = &["none", "page", "column"];
 /// Open, not closed: Typst knows more paper names than are worth listing, and
 /// adds them faster than this table would be updated. An unrecognised one
@@ -372,6 +376,11 @@ pub fn schema() -> Schema<Constraint> {
             vec![K("document"), K("align")],
             Str,
             Some(vocab(ALIGNS, true)),
+        ),
+        rule(
+            vec![K("document"), K("overflow-wrap")],
+            Str,
+            Some(vocab(OVERFLOW_WRAPS, true)),
         ),
         rule(vec![K("document"), K("toc-depth")], Int, None),
         rule(

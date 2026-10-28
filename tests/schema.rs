@@ -121,6 +121,7 @@ fn populated_document() -> Document {
         size: Some("11pt".into()),
         leading: Some("1pt".into()),
         align: Some(Align::Left),
+        overflow_wrap: Some("break-word".into()),
         lang: Some("en".into()),
         title: Some("t".into()),
         author: Some("a".into()),
