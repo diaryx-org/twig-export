@@ -58,7 +58,9 @@
   set par(
     justify: not reflow,
     leading: 0.68em,
-    spacing: if reflow { 1.1em } else { 0.68em },
+    // A paragraph's spacing stands in for the leading after its last line:
+    // on screen, a clear gap; on paper, none, the indent marking it.
+    spacing: if reflow { 1.45em } else { 0.68em },
     first-line-indent: if reflow { 0em } else { 1.3em },
     overflow-wrap: "break-word",
   )
@@ -67,8 +69,10 @@
   show heading: set block(above: 1.7em, below: 0.85em)
   show heading.where(level: 1): set text(size: 1.9em, weight: "medium")
   show heading.where(level: 2): set text(size: 1.4em)
-  show heading.where(level: 3): set text(size: 1.15em, style: "italic")
-  show heading.where(level: 4): set text(size: 1em, style: "italic")
+  show heading.where(level: 3): it => block(above: 1.5em, below: 0.7em,
+    text(size: 1.15em, style: "italic", it.body))
+  show heading.where(level: 4): it => block(above: 1.3em, below: 0.6em,
+    text(style: "italic", it.body))
 
   show raw: set text(font: mono, size: 0.88em)
   show raw.where(block: true): it => block(

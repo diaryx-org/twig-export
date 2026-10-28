@@ -51,7 +51,8 @@
   set par(
     justify: false,
     leading: 0.78em,
-    spacing: 1.15em,
+    // A paragraph's spacing stands in for the leading after its last line.
+    spacing: 1.5em,
     overflow-wrap: "break-word",
   )
 

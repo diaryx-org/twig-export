@@ -53,7 +53,8 @@
   set par(
     justify: not reflow,
     leading: 0.7em,
-    spacing: 1em,
+    // A paragraph's spacing stands in for the leading after its last line.
+    spacing: 1.4em,
     overflow-wrap: "break-word",
   )
 
@@ -83,7 +84,7 @@
   set line(stroke: 0.8pt + rule)
   set table(stroke: (x, y) => if y == 0 { (bottom: 0.8pt + ink) } else { (bottom: 0.4pt + rule) },
     inset: (x: 0.6em, y: 0.5em))
-  set list(marker: text(fill: accent)[▪], indent: 0.3em)
+  set list(marker: text(fill: accent)[•], indent: 0.3em)
   set enum(indent: 0.3em)
   set footnote.entry(separator: line(length: 20%, stroke: 0.8pt + accent))
 
