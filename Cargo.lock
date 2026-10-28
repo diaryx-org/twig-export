@@ -2745,7 +2745,7 @@ checksum = "6af6ae20167a9ece4bcb41af5b80f8a1f1df981f6391189ce00fd257af04126a"
 [[package]]
 name = "typst"
 version = "0.15.1"
-source = "git+https://github.com/diaryx-org/typst?branch=twig#862510dec6e7732e01046726a59013433ee7c308"
+source = "git+https://github.com/diaryx-org/typst?branch=twig#c14b74aa1702f44acc730ec1a0df783a264a2843"
 dependencies = [
  "arrayvec",
  "comemo",
@@ -2774,7 +2774,7 @@ dependencies = [
 [[package]]
 name = "typst-eval"
 version = "0.15.1"
-source = "git+https://github.com/diaryx-org/typst?branch=twig#862510dec6e7732e01046726a59013433ee7c308"
+source = "git+https://github.com/diaryx-org/typst?branch=twig#c14b74aa1702f44acc730ec1a0df783a264a2843"
 dependencies = [
  "comemo",
  "ecow",
@@ -2793,7 +2793,7 @@ dependencies = [
 [[package]]
 name = "typst-html"
 version = "0.15.1"
-source = "git+https://github.com/diaryx-org/typst?branch=twig#862510dec6e7732e01046726a59013433ee7c308"
+source = "git+https://github.com/diaryx-org/typst?branch=twig#c14b74aa1702f44acc730ec1a0df783a264a2843"
 dependencies = [
  "az",
  "bumpalo",
@@ -2815,7 +2815,7 @@ dependencies = [
 [[package]]
 name = "typst-kit"
 version = "0.15.1"
-source = "git+https://github.com/diaryx-org/typst?branch=twig#862510dec6e7732e01046726a59013433ee7c308"
+source = "git+https://github.com/diaryx-org/typst?branch=twig#c14b74aa1702f44acc730ec1a0df783a264a2843"
 dependencies = [
  "dirs",
  "ecow",
@@ -2843,7 +2843,7 @@ dependencies = [
 [[package]]
 name = "typst-layout"
 version = "0.15.1"
-source = "git+https://github.com/diaryx-org/typst?branch=twig#862510dec6e7732e01046726a59013433ee7c308"
+source = "git+https://github.com/diaryx-org/typst?branch=twig#c14b74aa1702f44acc730ec1a0df783a264a2843"
 dependencies = [
  "az",
  "bumpalo",
@@ -2878,7 +2878,7 @@ dependencies = [
 [[package]]
 name = "typst-library"
 version = "0.15.1"
-source = "git+https://github.com/diaryx-org/typst?branch=twig#862510dec6e7732e01046726a59013433ee7c308"
+source = "git+https://github.com/diaryx-org/typst?branch=twig#c14b74aa1702f44acc730ec1a0df783a264a2843"
 dependencies = [
  "arrayvec",
  "az",
@@ -2944,7 +2944,7 @@ dependencies = [
 [[package]]
 name = "typst-macros"
 version = "0.15.1"
-source = "git+https://github.com/diaryx-org/typst?branch=twig#862510dec6e7732e01046726a59013433ee7c308"
+source = "git+https://github.com/diaryx-org/typst?branch=twig#c14b74aa1702f44acc730ec1a0df783a264a2843"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -2955,7 +2955,7 @@ dependencies = [
 [[package]]
 name = "typst-pdf"
 version = "0.15.1"
-source = "git+https://github.com/diaryx-org/typst?branch=twig#862510dec6e7732e01046726a59013433ee7c308"
+source = "git+https://github.com/diaryx-org/typst?branch=twig#c14b74aa1702f44acc730ec1a0df783a264a2843"
 dependencies = [
  "az",
  "bytemuck",
@@ -2983,7 +2983,7 @@ dependencies = [
 [[package]]
 name = "typst-realize"
 version = "0.15.1"
-source = "git+https://github.com/diaryx-org/typst?branch=twig#862510dec6e7732e01046726a59013433ee7c308"
+source = "git+https://github.com/diaryx-org/typst?branch=twig#c14b74aa1702f44acc730ec1a0df783a264a2843"
 dependencies = [
  "arrayvec",
  "bumpalo",
@@ -3001,7 +3001,7 @@ dependencies = [
 [[package]]
 name = "typst-svg"
 version = "0.15.1"
-source = "git+https://github.com/diaryx-org/typst?branch=twig#862510dec6e7732e01046726a59013433ee7c308"
+source = "git+https://github.com/diaryx-org/typst?branch=twig#c14b74aa1702f44acc730ec1a0df783a264a2843"
 dependencies = [
  "base64",
  "comemo",
@@ -3027,7 +3027,7 @@ dependencies = [
 [[package]]
 name = "typst-syntax"
 version = "0.15.1"
-source = "git+https://github.com/diaryx-org/typst?branch=twig#862510dec6e7732e01046726a59013433ee7c308"
+source = "git+https://github.com/diaryx-org/typst?branch=twig#c14b74aa1702f44acc730ec1a0df783a264a2843"
 dependencies = [
  "ecow",
  "rustc-hash",
@@ -3045,7 +3045,7 @@ dependencies = [
 [[package]]
 name = "typst-timing"
 version = "0.15.1"
-source = "git+https://github.com/diaryx-org/typst?branch=twig#862510dec6e7732e01046726a59013433ee7c308"
+source = "git+https://github.com/diaryx-org/typst?branch=twig#c14b74aa1702f44acc730ec1a0df783a264a2843"
 dependencies = [
  "parking_lot",
  "serde",
@@ -3055,7 +3055,7 @@ dependencies = [
 [[package]]
 name = "typst-utils"
 version = "0.15.1"
-source = "git+https://github.com/diaryx-org/typst?branch=twig#862510dec6e7732e01046726a59013433ee7c308"
+source = "git+https://github.com/diaryx-org/typst?branch=twig#c14b74aa1702f44acc730ec1a0df783a264a2843"
 dependencies = [
  "libm",
  "once_cell",

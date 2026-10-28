@@ -47,6 +47,9 @@ mod typst_world;
 #[cfg(feature = "pdf")]
 pub mod pdf;
 
+#[cfg(feature = "pdf")]
+pub mod tiles;
+
 #[cfg(feature = "install")]
 pub mod install;
 

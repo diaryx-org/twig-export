@@ -302,6 +302,27 @@ impl Layout {
             .collect()
     }
 
+    /// Each page cut into tiles, a block's each ([`crate::tiles`]).
+    pub fn tiles(&self) -> Vec<crate::tiles::Tile> {
+        crate::tiles::tiles(&self.document, self.file)
+    }
+
+    /// A tile as an SVG document, the tile's size, on no ground: the host
+    /// draws the paper, and the tile over it.
+    #[cfg(feature = "svg")]
+    pub fn tile_svg(&self, tile: &crate::tiles::Tile) -> String {
+        use typst::foundations::Smart;
+        use typst::layout::{Abs, Sides};
+        let Some(page) = self.document.pages().get(tile.page) else {
+            return String::new();
+        };
+        let mut page = page.clone();
+        page.frame = tile.frame.clone();
+        page.fill = Smart::Custom(None);
+        page.bleed = Sides::splat(Abs::zero());
+        typst_svg::svg(&page, &typst_svg::SvgOptions::default())
+    }
+
     /// Each page's size and glyphs.
     pub fn pages(&self) -> Vec<Page> {
         self.document
