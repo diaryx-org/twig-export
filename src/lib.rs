@@ -38,6 +38,7 @@ pub mod meta;
 pub mod resolve;
 pub mod schema;
 pub mod style;
+pub mod templates;
 pub mod typst_emit;
 
 #[cfg(any(feature = "pdf", feature = "html"))]
@@ -193,6 +194,18 @@ fn prepare(
     if let Some((lang, text)) = doc.metadata() {
         let meta = meta::parse_metadata(lang, text)?;
         unfired_bindings = meta::apply_metadata(&mut cfg.document, &meta);
+    }
+
+    // A template named by the config or bound from the frontmatter must be
+    // one twig-export has: the emitter would otherwise set the document
+    // without it, and silently.
+    if let Some(name) = cfg.document.template.as_deref()
+        && templates::source(name).is_none()
+    {
+        anyhow::bail!(
+            "no template named {name:?}: twig-export has {}",
+            templates::NAMES.join(", ")
+        );
     }
 
     let resolved = resolve::resolve(&cfg, &doc, &mut td)?;

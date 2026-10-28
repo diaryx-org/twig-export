@@ -69,6 +69,20 @@ pub struct Document {
     /// characters where nothing else fits. Typst's `par.overflow-wrap`, which
     /// diaryx-org's fork adds.
     pub overflow_wrap: Option<String>,
+    /// One of the templates twig-export ships (`crate::templates`), which
+    /// sets the page and styles every element. With one, `paper`, `margin`,
+    /// `font` and `size` are its arguments rather than settings of their own:
+    /// the template decides how a page looks, given those.
+    pub template: Option<String>,
+    /// `"paged"`, on sheets (the default), or `"reflow"`: one page as wide as
+    /// `page-width` and as tall as the text. Only a template reads it.
+    pub layout: Option<String>,
+    /// The page's width and height, for a sheet that is not a named paper,
+    /// or the reflowed page's width. Only a template reads them.
+    pub page_width: Option<String>,
+    pub page_height: Option<String>,
+    /// Set light text on a dark page. Only a template reads it.
+    pub dark: Option<bool>,
     /// Base language, for hyphenation and quote marks (`"en"`, `"de"`).
     pub lang: Option<String>,
     pub title: Option<String>,
@@ -138,6 +152,11 @@ impl Default for Document {
             leading: None,
             align: None,
             overflow_wrap: None,
+            template: None,
+            layout: None,
+            page_width: None,
+            page_height: None,
+            dark: None,
             lang: Some("en".into()),
             title: None,
             author: None,
@@ -166,6 +185,8 @@ impl Document {
             "size" => self.size.clone()?,
             "leading" => self.leading.clone()?,
             "overflow-wrap" => self.overflow_wrap.clone()?,
+            "template" => self.template.clone()?,
+            "layout" => self.layout.clone()?,
             "lang" => self.lang.clone()?,
             "title" => self.title.clone()?,
             "author" => self.author.clone()?,
@@ -186,6 +207,8 @@ pub const DOC_FIELD_NAMES: &[&str] = &[
     "size",
     "leading",
     "overflow-wrap",
+    "template",
+    "layout",
     "lang",
     "title",
     "author",

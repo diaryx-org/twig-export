@@ -297,6 +297,11 @@ pub const DOCUMENT_KEYS: &[&str] = &[
     "leading",
     "align",
     "overflow-wrap",
+    "template",
+    "layout",
+    "page-width",
+    "page-height",
+    "dark",
     "lang",
     "title",
     "author",
@@ -327,6 +332,9 @@ const ALIGNS: &[&str] = &["left", "center", "right", "justify"];
 
 /// What `document.overflow-wrap` may be: Typst's `par.overflow-wrap`.
 const OVERFLOW_WRAPS: &[&str] = &["normal", "break-word"];
+
+/// What `document.layout` may be.
+const LAYOUTS: &[&str] = &["paged", "reflow"];
 const BREAKS: &[&str] = &["none", "page", "column"];
 /// Open, not closed: Typst knows more paper names than are worth listing, and
 /// adds them faster than this table would be updated. An unrecognised one
@@ -382,6 +390,22 @@ pub fn schema() -> Schema<Constraint> {
             Str,
             Some(vocab(OVERFLOW_WRAPS, true)),
         ),
+        rule(
+            vec![K("document"), K("template")],
+            Str,
+            Some(vocab(crate::templates::NAMES, true)),
+        ),
+        rule(
+            vec![K("document"), K("layout")],
+            Str,
+            Some(vocab(LAYOUTS, true)),
+        ),
+        rule(
+            vec![K("document"), K("page-width")],
+            Str,
+            Some(Constraint::Length),
+        ),
+        rule(vec![K("document"), K("dark")], Bool, None),
         rule(vec![K("document"), K("toc-depth")], Int, None),
         rule(
             vec![K("document"), K("raw-preamble")],
