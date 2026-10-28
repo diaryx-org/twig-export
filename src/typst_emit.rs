@@ -15,7 +15,20 @@
 //! second backend (CSS paged media, say) is a sibling of this file and needs
 //! no changes anywhere else. That is the whole reason the vocabulary is
 //! neutral instead of being Typst show-rules with extra steps.
+//!
+//! ── The words as content ─────────────────────────────────────────────────
+//! [`emit`] writes the author's text into the `.typ` as escaped markup.
+//! [`emit_words`] writes the same structure, styles and escape hatches, but
+//! leaves a hole wherever the author's text would go — `#_twig.at(3);` —
+//! and hands back the [`Word`]s, each with the byte of the source it came
+//! from. The whole document is then one template function of the words,
+//! which [`crate::pdf`] calls with each word as Typst content spanned to its
+//! place in the source. A glyph on the page then leads back to the
+//! Markdown byte it was set from, which an editor drawing on the page needs;
+//! no text is escaped; and typing inside a paragraph leaves the generated
+//! source as it was, so Typst's cache keeps every other block.
 
+use std::cell::RefCell;
 use std::fmt::Write as _;
 
 use crate::config::{Config, Document, weight_str};
@@ -23,18 +36,204 @@ use crate::doc::{Doc, Idx};
 use crate::resolve::Resolved;
 use crate::style::{Align, Break, Style};
 
+/// The template function [`emit_words`] defines, and its one parameter, the
+/// words. Leading underscores keep both out of the way of a config's own
+/// raw Typst.
+pub const TEMPLATE: &str = "_twig-page";
+pub const WORDS: &str = "_twig";
+
+/// A run of the author's text, set as Typst content rather than markup: the
+/// text, the byte of the source it starts at, and whether it is code.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Word {
+    pub text: String,
+    pub at: usize,
+    pub code: Option<Code>,
+}
+
+/// Code, set as Typst's raw text: its language, whether it is a block, and
+/// the byte of the source each of its lines (`text` split at `\n`) starts
+/// at, so that a glyph on any line leads back to its own byte.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Code {
+    pub lang: Option<String>,
+    pub block: bool,
+    pub lines: Vec<usize>,
+}
+
+/// What the emitter reads beside the tree: the resolved styles, and, when
+/// it writes holes, the words it has written them for.
+struct Cx<'a> {
+    res: &'a Resolved,
+    words: Option<&'a RefCell<Vec<Word>>>,
+}
+
+impl<'a> Cx<'a> {
+    fn is_hidden(&self, doc: &Doc, idx: Idx) -> bool {
+        self.res.is_hidden(doc, idx)
+    }
+
+    fn style(&self, idx: Idx) -> Option<&'a Style> {
+        self.res.style(idx)
+    }
+
+    /// Node `idx`'s text `s`: escaped markup, or a hole for it. A hole ends
+    /// in `;`, so whatever follows it is markup again, never more of the
+    /// expression.
+    fn text(&self, doc: &Doc, idx: Idx, s: &str) -> String {
+        match self.words {
+            None => escape(s),
+            Some(_) if s.is_empty() => String::new(),
+            Some(words) => {
+                let mut words = words.borrow_mut();
+                let mut out = String::new();
+                for (text, at) in runs(doc, idx, s) {
+                    words.push(Word {
+                        text: text.to_string(),
+                        at,
+                        code: None,
+                    });
+                    let _ = write!(out, "#{WORDS}.at({});", words.len() - 1);
+                }
+                out
+            }
+        }
+    }
+
+    /// Node `idx`'s code `text`: a `#raw` call, or a hole for it. A call,
+    /// not a fence: a fence's content is column-sensitive, and
+    /// `wrap_block` indents whatever it wraps, so a styled code block inside
+    /// a `#block[…]` would silently gain leading whitespace on every line.
+    /// A string argument is immune to the surrounding indentation, and it
+    /// sidesteps fence-length arithmetic against backticks in the content.
+    fn code(&self, doc: &Doc, idx: Idx, text: &str, lang: Option<&str>, block: bool) -> String {
+        let Some(words) = self.words else {
+            let mut args = Vec::new();
+            if block {
+                args.push("block: true".to_string());
+            }
+            if let Some(lang) = lang {
+                args.push(format!("lang: {}", quote(lang)));
+            }
+            args.push(quote(text));
+            return format!("#raw({})", args.join(", "));
+        };
+        let (from, to) = doc.node(idx).span;
+        let source = doc.source.get(from..to).unwrap_or_default();
+        let mut cursor = 0;
+        let lines: Vec<usize> = text
+            .split('\n')
+            .map(|line| {
+                let start = source[cursor..].find(line).map_or(cursor, |p| cursor + p);
+                cursor = start + line.len();
+                from + start
+            })
+            .collect();
+        let mut words = words.borrow_mut();
+        words.push(Word {
+            text: text.to_string(),
+            at: lines.first().copied().unwrap_or(from),
+            code: Some(Code {
+                lang: lang.map(str::to_string),
+                block,
+                lines,
+            }),
+        });
+        format!("#{WORDS}.at({});", words.len() - 1)
+    }
+
+    /// The same, writing text as text: for a string Typst reads as a string
+    /// (an image's `alt`), where content cannot go.
+    fn plain(&self) -> Cx<'a> {
+        Cx {
+            res: self.res,
+            words: None,
+        }
+    }
+}
+
+/// Node `idx`'s text `s` as runs that each stand whole in the source, and
+/// the byte each starts at: one run, unless the source spells the text with
+/// a backslash escape (`\\"` for `"`), after which the text is a new run.
+/// The text is looked for from the node's span on, then from a few bytes
+/// before it, since a parser's span can start a character early (twig's,
+/// after an unmatched `[`).
+fn runs<'s>(doc: &Doc, idx: Idx, s: &'s str) -> Vec<(&'s str, usize)> {
+    let source = &doc.source;
+    let (from, to) = doc.node(idx).span;
+    let hi = (to + 4).min(source.len());
+    let mut lo = from.saturating_sub(4);
+    while !source.is_char_boundary(lo) {
+        lo -= 1;
+    }
+    let first = s.chars().next().map(String::from).unwrap_or_default();
+    let found = |pat: &str| {
+        let after = source.get(from..hi)?.find(pat).map(|p| from + p);
+        after.or_else(|| source.get(lo..hi)?.find(pat).map(|p| lo + p))
+    };
+    let Some(mut at) = found(s).or_else(|| found(&first)) else {
+        return vec![(s, from)];
+    };
+    let mut runs = Vec::new();
+    let mut start = 0;
+    let mut run_at = at;
+    for (i, c) in s.char_indices() {
+        let mut here = source[at..].chars();
+        match here.next() {
+            Some(d) if d == c => at += c.len_utf8(),
+            // The escape is the source's, not the text's: the text goes on
+            // a byte later, as a new run.
+            Some('\\') if here.next() == Some(c) => {
+                if i > start {
+                    runs.push((&s[start..i], run_at));
+                }
+                start = i;
+                run_at = at + 1;
+                at += 1 + c.len_utf8();
+            }
+            // Spelled some other way (an entity, a reference): the rest is
+            // one run, from here.
+            _ => break,
+        }
+    }
+    runs.push((&s[start..], run_at));
+    runs
+}
+
 /// Render a document to Typst source.
 pub fn emit(doc: &Doc, cfg: &Config, resolved: &Resolved) -> String {
+    let cx = Cx {
+        res: resolved,
+        words: None,
+    };
     let mut out = String::new();
     preamble(&mut out, cfg, resolved);
-
-    let root = doc.root();
-    let mut body = String::new();
-    for &child in &doc.node(root).children {
-        emit_block(&mut body, doc, resolved, child);
-    }
-    out.push_str(&body);
+    body(&mut out, doc, &cx);
     out
+}
+
+/// Render a document to Typst source with a hole for each run of the
+/// author's text, and the words that fill them: the source defines one
+/// function, [`TEMPLATE`], which takes the words as an array of content
+/// and is the whole document.
+pub fn emit_words(doc: &Doc, cfg: &Config, resolved: &Resolved) -> (String, Vec<Word>) {
+    let words = RefCell::new(Vec::new());
+    let cx = Cx {
+        res: resolved,
+        words: Some(&words),
+    };
+    let mut out = String::new();
+    let _ = writeln!(out, "#let {TEMPLATE}({WORDS}) = [");
+    preamble(&mut out, cfg, resolved);
+    body(&mut out, doc, &cx);
+    out.push_str("]\n");
+    (out, words.into_inner())
+}
+
+fn body(out: &mut String, doc: &Doc, cx: &Cx) {
+    for &child in &doc.node(doc.root()).children {
+        emit_block(out, doc, cx, child);
+    }
 }
 
 fn preamble(out: &mut String, cfg: &Config, resolved: &Resolved) {
@@ -118,12 +317,12 @@ fn preamble(out: &mut String, cfg: &Config, resolved: &Resolved) {
 }
 
 /// Emit one block-level node, applying its style.
-fn emit_block(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
-    if res.is_hidden(doc, idx) {
+fn emit_block(out: &mut String, doc: &Doc, cx: &Cx, idx: Idx) {
+    if cx.is_hidden(doc, idx) {
         return;
     }
     let empty = Style::default();
-    let style = res.style(idx).unwrap_or(&empty);
+    let style = cx.style(idx).unwrap_or(&empty);
 
     if let Some(raw) = &style.raw
         && let Some(before) = &raw.before
@@ -138,7 +337,7 @@ fn emit_block(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
     }
 
     let mut inner = String::new();
-    render_block_content(&mut inner, doc, res, idx, style);
+    render_block_content(&mut inner, doc, cx, idx, style);
 
     let wrapped = wrap_block(&inner, style, doc, idx);
     out.push_str(&wrapped);
@@ -161,14 +360,14 @@ fn emit_block(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
 }
 
 /// The node's own markup, before any style wrapper.
-fn render_block_content(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx, style: &Style) {
+fn render_block_content(out: &mut String, doc: &Doc, cx: &Cx, idx: Idx, style: &Style) {
     let n = doc.node(idx);
 
     // `unwrap` drops the node's own decoration and keeps its contents — the
     // styling analogue of `twig filter --unwrap`.
     if style.unwrap == Some(true) {
         for &c in &n.children {
-            emit_block(out, doc, res, c);
+            emit_block(out, doc, cx, c);
         }
         return;
     }
@@ -181,10 +380,10 @@ fn render_block_content(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx, s
         "heading" => {
             let level = n.int_field("level").unwrap_or(1).clamp(1, 6);
             let _ = write!(out, "{} ", "=".repeat(level as usize));
-            emit_inlines(out, doc, res, &n.children);
+            emit_inlines(out, doc, cx, &n.children);
         }
 
-        "para" => emit_inlines(out, doc, res, &n.children),
+        "para" => emit_inlines(out, doc, cx, &n.children),
 
         "thematic_break" => out.push_str("#line(length: 100%)"),
 
@@ -192,33 +391,16 @@ fn render_block_content(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx, s
             out.push_str("#quote(block: true)[\n");
             let mut body = String::new();
             for &c in &n.children {
-                emit_block(&mut body, doc, res, c);
+                emit_block(&mut body, doc, cx, c);
             }
             out.push_str(&indent(&body));
             out.push(']');
         }
 
-        // Emitted as a `#raw` CALL rather than a ``` fence on purpose. A
-        // fence's content is column-sensitive, and `wrap_block` indents
-        // whatever it wraps — so a styled code block inside a `#block[…]`
-        // would silently gain leading whitespace on every line. A string
-        // argument is immune to the surrounding indentation, and it sidesteps
-        // fence-length arithmetic against backticks in the content.
         "code_block" => {
             let text = n.str_field("text").unwrap_or_default();
-            match n.str_field("lang").filter(|l| !l.is_empty()) {
-                Some(lang) => {
-                    let _ = write!(
-                        out,
-                        "#raw(block: true, lang: {}, {})",
-                        quote(lang),
-                        quote(text)
-                    );
-                }
-                None => {
-                    let _ = write!(out, "#raw(block: true, {})", quote(text));
-                }
-            }
+            let lang = n.str_field("lang").filter(|l| !l.is_empty());
+            out.push_str(&cx.code(doc, idx, text, lang, true));
         }
 
         // Verbatim output aimed at a target format. Emitted only when it was
@@ -233,7 +415,7 @@ fn render_block_content(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx, s
         "bullet_list" => {
             for &c in &n.children {
                 let mut item = String::new();
-                render_list_item_body(&mut item, doc, res, c);
+                render_list_item_body(&mut item, doc, cx, c);
                 let _ = writeln!(out, "- {}", indent_continuation(&item));
             }
         }
@@ -249,7 +431,7 @@ fn render_block_content(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx, s
             }
             for &c in &n.children {
                 let mut item = String::new();
-                render_list_item_body(&mut item, doc, res, c);
+                render_list_item_body(&mut item, doc, cx, c);
                 let _ = writeln!(out, "+ {}", indent_continuation(&item));
             }
         }
@@ -258,7 +440,7 @@ fn render_block_content(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx, s
             for &c in &n.children {
                 let checked = doc.node(c).bool_field("checked").unwrap_or(false);
                 let mut item = String::new();
-                render_list_item_body(&mut item, doc, res, c);
+                render_list_item_body(&mut item, doc, cx, c);
                 let _ = writeln!(
                     out,
                     "- {} {}",
@@ -276,18 +458,18 @@ fn render_block_content(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx, s
                 for &g in &dli.children {
                     let gn = doc.node(g);
                     match gn.kind.as_str() {
-                        "term" => emit_inlines(&mut term, doc, res, &gn.children),
+                        "term" => emit_inlines(&mut term, doc, cx, &gn.children),
                         // A `definition`'s children are inline when the source
                         // was a one-liner and blocks when it was not; twig
                         // emits `str` directly in the former case.
-                        _ => render_mixed(&mut def, doc, res, &gn.children),
+                        _ => render_mixed(&mut def, doc, cx, &gn.children),
                     }
                 }
                 let _ = writeln!(out, "/ {}: {}", term.trim(), indent_continuation(&def));
             }
         }
 
-        "table" => render_table(out, doc, res, idx),
+        "table" => render_table(out, doc, cx, idx),
 
         // A run of lines whose breaks ARE the content (verse, addresses).
         // Reflowing would destroy it, so each line gets a hard break.
@@ -301,7 +483,7 @@ fn render_block_content(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx, s
                 if depth > 0 {
                     let _ = write!(out, "#h({}em)", depth * 2);
                 }
-                emit_inlines(out, doc, res, &line.children);
+                emit_inlines(out, doc, cx, &line.children);
             }
         }
 
@@ -312,7 +494,7 @@ fn render_block_content(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx, s
 
         "section" | "doc" | "container" => {
             for &c in &n.children {
-                emit_block(out, doc, res, c);
+                emit_block(out, doc, cx, c);
             }
         }
 
@@ -322,10 +504,10 @@ fn render_block_content(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx, s
         // backend has not learned yet.
         _ => {
             if n.children.is_empty() {
-                emit_inline(out, doc, res, idx);
+                emit_inline(out, doc, cx, idx);
             } else {
                 for &c in &n.children {
-                    emit_block(out, doc, res, c);
+                    emit_block(out, doc, cx, c);
                 }
             }
         }
@@ -334,22 +516,22 @@ fn render_block_content(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx, s
 
 /// A list item's body: a tight item is one paragraph inline, a loose item can
 /// hold arbitrary blocks.
-fn render_list_item_body(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
-    if res.is_hidden(doc, idx) {
+fn render_list_item_body(out: &mut String, doc: &Doc, cx: &Cx, idx: Idx) {
+    if cx.is_hidden(doc, idx) {
         return;
     }
     let n = doc.node(idx);
     let only_para = n.children.len() == 1 && doc.node(n.children[0]).kind == twig::Kind::Para;
     if only_para {
-        emit_inlines(out, doc, res, &doc.node(n.children[0]).children);
+        emit_inlines(out, doc, cx, &doc.node(n.children[0]).children);
     } else {
         for &c in &n.children {
-            emit_block(out, doc, res, c);
+            emit_block(out, doc, cx, c);
         }
     }
 }
 
-fn render_table(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
+fn render_table(out: &mut String, doc: &Doc, cx: &Cx, idx: Idx) {
     let n = doc.node(idx);
     let rows: Vec<Idx> = n
         .children
@@ -390,7 +572,7 @@ fn render_table(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
         for &c in &row.children {
             let cell = doc.node(c);
             let mut body = String::new();
-            emit_inlines(&mut body, doc, res, &cell.children);
+            emit_inlines(&mut body, doc, cx, &cell.children);
             let colspan = cell.int_field("colspan").unwrap_or(1);
             let rowspan = cell.int_field("rowspan").unwrap_or(1);
             if colspan > 1 || rowspan > 1 {
@@ -417,7 +599,7 @@ fn render_table(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
         let capnode = doc.node(cap);
         if !capnode.children.is_empty() {
             let mut body = String::new();
-            emit_inlines(&mut body, doc, res, &capnode.children);
+            emit_inlines(&mut body, doc, cx, &capnode.children);
             let _ = writeln!(out, "  // caption");
             let _ = write!(out, ")\n#[\n#set align(center)\n#emph[{}]\n]", body.trim());
             return;
@@ -449,13 +631,13 @@ fn is_block_kind(kind: &twig::Kind) -> bool {
 }
 
 /// Render children that may be inline, blocks, or both.
-fn render_mixed(out: &mut String, doc: &Doc, res: &Resolved, kids: &[Idx]) {
+fn render_mixed(out: &mut String, doc: &Doc, cx: &Cx, kids: &[Idx]) {
     if kids.iter().any(|&k| is_block_kind(&doc.node(k).kind)) {
         for &k in kids {
-            emit_block(out, doc, res, k);
+            emit_block(out, doc, cx, k);
         }
     } else {
-        emit_inlines(out, doc, res, kids);
+        emit_inlines(out, doc, cx, kids);
     }
 }
 
@@ -475,59 +657,57 @@ fn checkbox(checked: bool) -> &'static str {
     }
 }
 
-fn emit_inlines(out: &mut String, doc: &Doc, res: &Resolved, kids: &[Idx]) {
+fn emit_inlines(out: &mut String, doc: &Doc, cx: &Cx, kids: &[Idx]) {
     for &k in kids {
-        emit_inline(out, doc, res, k);
+        emit_inline(out, doc, cx, k);
     }
 }
 
-fn emit_inline(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
-    if res.is_hidden(doc, idx) {
+fn emit_inline(out: &mut String, doc: &Doc, cx: &Cx, idx: Idx) {
+    if cx.is_hidden(doc, idx) {
         return;
     }
     let n = doc.node(idx);
     let empty = Style::default();
-    let style = res.style(idx).unwrap_or(&empty);
+    let style = cx.style(idx).unwrap_or(&empty);
 
     let mut inner = String::new();
     match n.kind.as_str() {
-        "str" | "text_leaf" => inner.push_str(&escape(n.str_field("text").unwrap_or_default())),
+        "str" | "text_leaf" => {
+            inner.push_str(&cx.text(doc, idx, n.str_field("text").unwrap_or_default()))
+        }
         "soft_break" => inner.push('\n'),
         "hard_break" => inner.push_str(" \\\n"),
         "non_breaking_space" => inner.push('~'),
 
         "emph" => {
             inner.push_str("#emph[");
-            emit_inlines(&mut inner, doc, res, &n.children);
+            emit_inlines(&mut inner, doc, cx, &n.children);
             inner.push(']');
         }
         "strong" => {
             inner.push_str("#strong[");
-            emit_inlines(&mut inner, doc, res, &n.children);
+            emit_inlines(&mut inner, doc, cx, &n.children);
             inner.push(']');
         }
-        // Same reasoning as `code_block`: a call, not a fence.
         "verbatim" | "code" => {
-            let _ = write!(
-                inner,
-                "#raw({})",
-                quote(n.str_field("text").unwrap_or_default())
-            );
+            let text = n.str_field("text").unwrap_or_default();
+            inner.push_str(&cx.code(doc, idx, text, None, false));
         }
         "link" => {
             let dest = n.str_field("destination").unwrap_or_default();
             let _ = write!(inner, "#link({})[", quote(dest));
             if n.children.is_empty() {
-                inner.push_str(&escape(dest));
+                inner.push_str(&cx.text(doc, idx, dest));
             } else {
-                emit_inlines(&mut inner, doc, res, &n.children);
+                emit_inlines(&mut inner, doc, cx, &n.children);
             }
             inner.push(']');
         }
         "image" => {
             let dest = n.str_field("destination").unwrap_or_default();
             let mut alt = String::new();
-            emit_inlines(&mut alt, doc, res, &n.children);
+            emit_inlines(&mut alt, doc, &cx.plain(), &n.children);
             let alt = strip_markup(&alt);
             match image_source(dest) {
                 Some(src) if alt.is_empty() => {
@@ -538,8 +718,8 @@ fn emit_inline(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
                 }
                 // Nothing Typst can read: the alt text stands in, rather
                 // than the whole document failing to compile.
-                None if alt.is_empty() => inner.push_str(&escape(dest)),
-                None => inner.push_str(&escape(&alt)),
+                None if alt.is_empty() => inner.push_str(&cx.text(doc, idx, dest)),
+                None => inner.push_str(&cx.text(doc, idx, &alt)),
             }
         }
         "footnote_reference" => {
@@ -549,7 +729,7 @@ fn emit_inline(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
                     inner.push_str("#footnote[");
                     let mut body = String::new();
                     for &c in &doc.node(def).children {
-                        emit_block(&mut body, doc, res, c);
+                        emit_block(&mut body, doc, cx, c);
                     }
                     inner.push_str(body.trim());
                     inner.push(']');
@@ -559,7 +739,10 @@ fn emit_inline(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
                 }
             }
         }
-        "smart_punctuation" => inner.push_str(smart_punct(n.str_field("kind").unwrap_or_default())),
+        "smart_punctuation" => {
+            let punct = smart_punct(n.str_field("kind").unwrap_or_default());
+            inner.push_str(&cx.text(doc, idx, punct));
+        }
         "raw_inline" => {
             if matches!(n.str_field("format"), Some("typst") | Some("pdf")) {
                 inner.push_str(n.str_field("text").unwrap_or_default());
@@ -568,7 +751,7 @@ fn emit_inline(out: &mut String, doc: &Doc, res: &Resolved, idx: Idx) {
         // Inline containers (a djot span, an HTML `<span>`, a `:name` text
         // directive) carry no rendering of their own — they exist so a rule
         // can attach one.
-        _ => emit_inlines(&mut inner, doc, res, &n.children),
+        _ => emit_inlines(&mut inner, doc, cx, &n.children),
     }
 
     out.push_str(&apply_inline_style(&inner, style));
@@ -726,10 +909,17 @@ fn wrap_block(content: &str, style: &Style, doc: &Doc, idx: Idx) -> String {
 /// tracking which characters are special in which position. `-` and `+` are
 /// only list markers at the start of a line, but a paragraph reflowed by a
 /// later edit can put any run at the start of a line, so they are escaped
-/// unconditionally too.
+/// unconditionally too. A `.` is escaped where another follows it, since
+/// `...` is Typst's shorthand for an ellipsis.
 fn escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 8);
-    for c in s.chars() {
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        // Not every `.`: only one before another, since `...` is Typst's
+        // shorthand for an ellipsis and the author wrote three dots.
+        if c == '.' && chars.peek() == Some(&'.') {
+            out.push('\\');
+        }
         if matches!(
             c,
             '\\' | '#'
@@ -1032,6 +1222,7 @@ mod tests {
     #[test]
     fn escape_neutralises_typst_markup() {
         assert_eq!(escape("a*b_c#d"), "a\\*b\\_c\\#d");
+        assert_eq!(escape("wait... ok."), "wait\\.\\.. ok.");
         assert_eq!(escape("100% of $5"), "100% of \\$5");
     }
 

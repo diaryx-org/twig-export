@@ -64,6 +64,18 @@ pub struct Rendered {
     pub unfired_bindings: Vec<String>,
 }
 
+/// What [`render_words`] produced: the Typst source with a hole for each run
+/// of the author's text, the words that fill them, and where each top-level
+/// block of the source starts. See [`typst_emit::emit_words`].
+pub struct Words {
+    pub typst: String,
+    pub words: Vec<typst_emit::Word>,
+    /// The byte each top-level block of the source starts at, in order: what
+    /// a word's place is counted from, so that typing in one block leaves the
+    /// places of the words in every other as they were.
+    pub blocks: Vec<usize>,
+}
+
 /// Opt-in syntax to parse with, named as twig names its Markdown features.
 ///
 /// twig 6 has no `MarkdownExtensions`: a language declares named features and
@@ -136,11 +148,42 @@ pub fn render(
 /// Apply `cfg` to `td`, a document already parsed from `source`, and emit
 /// Typst. For a caller that parses with features of its own, as an editor
 /// does, so the export reads the document the editor reads.
-pub fn render_parsed(
+pub fn render_parsed(td: twig::Document, source: &str, cfg: &config::Config) -> Result<Rendered> {
+    let (doc, cfg, resolved, unfired_bindings) = prepare(td, source, cfg)?;
+    let typst = typst_emit::emit(&doc, &cfg, &resolved);
+    Ok(Rendered {
+        typst,
+        match_counts: resolved.match_counts.clone(),
+        unfired_bindings,
+    })
+}
+
+/// As [`render_parsed`], with the author's words left out of the source as
+/// holes and handed back beside it, for [`pdf::Typesetter::lay_out`] to set
+/// as content.
+pub fn render_words(td: twig::Document, source: &str, cfg: &config::Config) -> Result<Words> {
+    let (doc, cfg, resolved, _) = prepare(td, source, cfg)?;
+    let (typst, words) = typst_emit::emit_words(&doc, &cfg, &resolved);
+    let blocks = doc
+        .node(doc.root())
+        .children
+        .iter()
+        .map(|&c| doc.node(c).span.0)
+        .collect();
+    Ok(Words {
+        typst,
+        words,
+        blocks,
+    })
+}
+
+/// The tree ingested, the config with the document's frontmatter applied,
+/// the styles resolved, and the frontmatter bindings that found nothing.
+fn prepare(
     mut td: twig::Document,
     source: &str,
     cfg: &config::Config,
-) -> Result<Rendered> {
+) -> Result<(doc::Doc, config::Config, resolve::Resolved, Vec<String>)> {
     let doc = doc::Doc::ingest(&mut td, source)?;
 
     // The document's frontmatter can override document-level settings, but
@@ -153,11 +196,5 @@ pub fn render_parsed(
     }
 
     let resolved = resolve::resolve(&cfg, &doc, &mut td)?;
-    let typst = typst_emit::emit(&doc, &cfg, &resolved);
-
-    Ok(Rendered {
-        typst,
-        match_counts: resolved.match_counts.clone(),
-        unfired_bindings,
-    })
+    Ok((doc, cfg, resolved, unfired_bindings))
 }
