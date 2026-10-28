@@ -1,0 +1,13 @@
+[package]
+name = "modern"
+version = "0.1.0"
+entrypoint = "lib.typ"
+authors = ["Diaryx"]
+license = "MIT OR Apache-2.0"
+description = "A note's page: Atkinson Hyperlegible Next, ragged, its paragraphs marked by space."
+
+# What twig-export reads: the name a menu shows, and the layouts the
+# template sets. See src/templates.rs.
+[tool.twig]
+label = "Modern"
+layouts = ["paged", "reflow"]

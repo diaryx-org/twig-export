@@ -44,6 +44,7 @@ use typst_kit::fonts::FontStore;
 use typst_layout::PagedDocument;
 
 use crate::typst_emit::{TEMPLATE, Word};
+pub use crate::typst_world::Packages;
 use crate::typst_world::{ExportWorld, fonts};
 
 /// Compile Typst source to PDF bytes, its relative paths (pictures)
@@ -61,18 +62,28 @@ pub fn compile_in(typ: &str, root: &Path) -> Result<Vec<u8>> {
 }
 
 /// What sets Typst source again and again: the fonts, read once when it is
-/// made. Cheap to clone, and shared between threads.
+/// made, and where it finds packages. Cheap to clone, and shared between
+/// threads.
 #[derive(Clone)]
 pub struct Typesetter {
     fonts: Arc<FontStore>,
+    packages: Packages,
 }
 
 impl Typesetter {
-    /// A typesetter with the embedded fonts and the system's, read now.
+    /// A typesetter with the embedded fonts and the system's, read now, and
+    /// the built-in templates.
     pub fn new() -> Self {
         Typesetter {
             fonts: Arc::new(fonts()),
+            packages: Packages::default(),
         }
+    }
+
+    /// This typesetter, finding packages in `packages`.
+    pub fn with_packages(mut self, packages: Packages) -> Self {
+        self.packages = packages;
+        self
     }
 
     /// Typst source as PDF bytes, its relative paths resolved against
@@ -136,6 +147,7 @@ impl Typesetter {
 
     fn world(&self, typ: &str, root: &Path) -> ExportWorld {
         ExportWorld::with_fonts(typ, Features::default(), root, Arc::clone(&self.fonts))
+            .with_packages(self.packages.clone())
     }
 }
 

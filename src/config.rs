@@ -69,11 +69,20 @@ pub struct Document {
     /// characters where nothing else fits. Typst's `par.overflow-wrap`, which
     /// diaryx-org's fork adds.
     pub overflow_wrap: Option<String>,
-    /// One of the templates twig-export ships (`crate::templates`), which
-    /// sets the page and styles every element. With one, `paper`, `margin`,
-    /// `font` and `size` are its arguments rather than settings of their own:
-    /// the template decides how a page looks, given those.
+    /// One of the templates twig-export ships (`crate::templates`) by its
+    /// name, or a template package by its spec, which sets the page and
+    /// styles every element. With one, `paper`, `margin`, `font` and `size`
+    /// are its arguments rather than settings of their own: the template
+    /// decides how a page looks, given those.
     pub template: Option<String>,
+    /// The frontmatter keys a template is given, as its `meta` dictionary:
+    /// a title, authors, an abstract, for a template that sets them. A key
+    /// not listed stays the document's own.
+    pub template_meta: Option<Vec<String>>,
+    /// What the frontmatter gave of `template-meta`'s keys, read by
+    /// `prepare`.
+    #[serde(skip)]
+    pub meta: BTreeMap<String, serde_json::Value>,
     /// `"paged"`, on sheets (the default), or `"reflow"`: one page as wide as
     /// `page-width` and as tall as the text. Only a template reads it.
     pub layout: Option<String>,
@@ -153,6 +162,8 @@ impl Default for Document {
             align: None,
             overflow_wrap: None,
             template: None,
+            template_meta: None,
+            meta: BTreeMap::new(),
             layout: None,
             page_width: None,
             page_height: None,

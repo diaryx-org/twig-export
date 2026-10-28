@@ -1,0 +1,13 @@
+[package]
+name = "editorial"
+version = "0.1.0"
+entrypoint = "lib.typ"
+authors = ["Diaryx"]
+license = "MIT OR Apache-2.0"
+description = "A magazine's page: Literata with Atkinson headings, sections in tracked capitals."
+
+# What twig-export reads: the name a menu shows, and the layouts the
+# template sets. See src/templates.rs.
+[tool.twig]
+label = "Editorial"
+layouts = ["paged", "reflow"]

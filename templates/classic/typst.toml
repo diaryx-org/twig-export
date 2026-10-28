@@ -1,0 +1,13 @@
+[package]
+name = "classic"
+version = "0.1.0"
+entrypoint = "lib.typ"
+authors = ["Diaryx"]
+license = "MIT OR Apache-2.0"
+description = "A book's page: Literata, justified and indented on paper, ragged and spaced on screen."
+
+# What twig-export reads: the name a menu shows, and the layouts the
+# template sets. See src/templates.rs.
+[tool.twig]
+label = "Classic"
+layouts = ["paged", "reflow"]

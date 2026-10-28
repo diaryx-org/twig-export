@@ -123,6 +123,8 @@ fn populated_document() -> Document {
         align: Some(Align::Left),
         overflow_wrap: Some("break-word".into()),
         template: Some("classic".into()),
+        template_meta: Some(vec!["title".into()]),
+        meta: Default::default(),
         layout: Some("reflow".into()),
         page_width: Some("400pt".into()),
         page_height: Some("auto".into()),

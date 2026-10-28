@@ -2,7 +2,7 @@
 // ragged on paper and on screen, its paragraphs marked by space. Headings in
 // the same face, set apart by weight; links in the accent, not underlined.
 //
-// A twig-export template: see classic.typ for the function's arguments.
+// A twig-export template: see classic/lib.typ for the function's arguments.
 #let twig-template(
   body,
   layout: "paged",
@@ -12,6 +12,7 @@
   size: 11pt,
   face: "sans-serif",
   dark: false,
+  meta: (:),
 ) = {
   let faces = (
     serif: ("Literata", "Noto Serif", "Libertinus Serif"),

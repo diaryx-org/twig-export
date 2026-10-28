@@ -194,18 +194,19 @@ fn prepare(
     if let Some((lang, text)) = doc.metadata() {
         let meta = meta::parse_metadata(lang, text)?;
         unfired_bindings = meta::apply_metadata(&mut cfg.document, &meta);
+        // The template is given only the keys the config lists.
+        let keys = cfg.document.template_meta.clone().unwrap_or_default();
+        cfg.document.meta = keys
+            .iter()
+            .filter_map(|k| Some((k.clone(), meta.get(k)?.clone())))
+            .collect();
     }
 
     // A template named by the config or bound from the frontmatter must be
-    // one twig-export has: the emitter would otherwise set the document
+    // one there can be: the emitter would otherwise set the document
     // without it, and silently.
-    if let Some(name) = cfg.document.template.as_deref()
-        && templates::source(name).is_none()
-    {
-        anyhow::bail!(
-            "no template named {name:?}: twig-export has {}",
-            templates::NAMES.join(", ")
-        );
+    if let Some(name) = cfg.document.template.as_deref() {
+        templates::check(name)?;
     }
 
     let resolved = resolve::resolve(&cfg, &doc, &mut td)?;

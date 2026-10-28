@@ -216,13 +216,13 @@ pub fn emit(doc: &Doc, cfg: &Config, resolved: &Resolved) -> String {
     out
 }
 
-/// The Typst of the template the config names, to stand above everything
+/// The import of the template the config names, to stand above everything
 /// else in the source; nothing without one. A name the config gives that
-/// is not one of [`crate::templates`] has been refused by then (`render`).
+/// is not a template has been refused by then (`render`).
 fn template_source(cfg: &Config) -> String {
     let template = cfg.document.template.as_deref();
-    match template.and_then(crate::templates::source) {
-        Some(src) => format!("{src}\n"),
+    match template.and_then(crate::templates::spec) {
+        Some(spec) => format!("#import {}: twig-template\n", quote(&spec)),
         None => String::new(),
     }
 }
@@ -260,7 +260,7 @@ fn preamble(out: &mut String, cfg: &Config, resolved: &Resolved) {
     let templated = d
         .template
         .as_deref()
-        .and_then(crate::templates::source)
+        .and_then(crate::templates::spec)
         .is_some();
     if templated {
         let mut args = vec![format!(
@@ -284,6 +284,14 @@ fn preamble(out: &mut String, cfg: &Config, resolved: &Resolved) {
         }
         if let Some(dark) = d.dark {
             args.push(format!("dark: {dark}"));
+        }
+        if !d.meta.is_empty() {
+            let fields: Vec<String> = d
+                .meta
+                .iter()
+                .map(|(k, v)| format!("{}: {}", quote(k), typst_value(v)))
+                .collect();
+            args.push(format!("meta: ({})", fields.join(", ")));
         }
         let _ = writeln!(out, "#show: twig-template.with({})", args.join(", "));
     }
@@ -1053,6 +1061,33 @@ fn percent_decode(s: &str) -> Option<Vec<u8>> {
         }
     }
     Some(out)
+}
+
+/// Frontmatter data as a Typst value: strings stay strings, never markup, so
+/// a document's metadata cannot run as code in its template.
+fn typst_value(v: &serde_json::Value) -> String {
+    use serde_json::Value as Json;
+    match v {
+        Json::Null => "none".into(),
+        Json::Bool(b) => b.to_string(),
+        Json::Number(n) => match n.as_i64() {
+            Some(i) => i.to_string(),
+            None => n.as_f64().map_or("none".into(), |f| format!("{f:?}")),
+        },
+        Json::String(s) => quote(s),
+        Json::Array(items) => {
+            let items: Vec<String> = items.iter().map(typst_value).collect();
+            format!("({},)", items.join(", "))
+        }
+        Json::Object(map) if map.is_empty() => "(:)".into(),
+        Json::Object(map) => {
+            let fields: Vec<String> = map
+                .iter()
+                .map(|(k, v)| format!("{}: {}", quote(k), typst_value(v)))
+                .collect();
+            format!("({})", fields.join(", "))
+        }
+    }
 }
 
 fn quote(s: &str) -> String {

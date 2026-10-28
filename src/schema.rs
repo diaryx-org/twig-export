@@ -298,6 +298,7 @@ pub const DOCUMENT_KEYS: &[&str] = &[
     "align",
     "overflow-wrap",
     "template",
+    "template-meta",
     "layout",
     "page-width",
     "page-height",
@@ -393,7 +394,8 @@ pub fn schema() -> Schema<Constraint> {
         rule(
             vec![K("document"), K("template")],
             Str,
-            Some(vocab(crate::templates::NAMES, true)),
+            // Open: a template package is named by its spec.
+            Some(vocab(crate::templates::NAMES, false)),
         ),
         rule(
             vec![K("document"), K("layout")],

@@ -28,7 +28,11 @@ html = ["dep:typst", "dep:typst-html", "dep:typst-kit"]
 # then a download from packages.typst.org cached under the system cache dir.
 # Only takes effect alongside `pdf` and/or `html`, since those are what link a
 # `World` at all; `network` on its own changes nothing.
-network = ["dep:typst-kit", "typst-kit/system-files", "typst-kit/system-downloader"]
+network = ["install", "typst-kit/system-packages", "typst-kit/system-downloader"]
+# `install`: fetch a package and every package it imports from Typst
+# Universe into a folder, through a downloader the caller gives, so that a
+# world without `network` finds them there. See src/install.rs.
+install = ["pdf", "typst-kit/universe-packages"]
 
 [dependencies]
 # The document AST. Published as `twig-doc`; imported as `twig`. twig 7 is

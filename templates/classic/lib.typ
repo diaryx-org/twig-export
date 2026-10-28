@@ -7,7 +7,12 @@
 // it is set. `layout` is "paged" or "reflow"; a reflowed page is `width` wide
 // and as tall as the text. Sizes are in em of `size`, the body's, so the
 // reader's text size scales every style. `face` is the document's face by
-// word (serif, sans-serif, monospace, handwritten).
+// word (serif, sans-serif, monospace, handwritten). `meta` is the document's
+// frontmatter as a dictionary, for a template that sets a title or its
+// authors from it; this one sets the document's own heading instead.
+//
+// A template is a Typst package, loaded as one: it reads only its own files,
+// never the document's folder.
 #let twig-template(
   body,
   layout: "paged",
@@ -17,6 +22,7 @@
   size: 11pt,
   face: "serif",
   dark: false,
+  meta: (:),
 ) = {
   let faces = (
     serif: ("Literata", "Noto Serif", "Libertinus Serif"),

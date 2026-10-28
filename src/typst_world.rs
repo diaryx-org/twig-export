@@ -6,43 +6,121 @@
 //! requires `Feature::Html`, PDF requires none) and which document type they
 //! ask `typst::compile` for.
 //!
-//! ── Packages are resolved the same way typst-cli does ───────────────────────
-//! With the `network` feature (on by default), `@preview/...` imports —
-//! Typst Universe templates and libraries — go through `typst-kit`'s
-//! `SystemFiles`: local package data/cache directories are checked first,
-//! then a download from packages.typst.org is cached under the system cache
-//! dir (`~/.cache/typst/packages` and platform equivalents). Without the
-//! feature, only project-relative paths resolve and a package import fails
-//! with "not found" — the crate still emits and compiles plain `.typ`.
+//! ── Files and packages ──────────────────────────────────────────────────────
+//! A document's own files (its pictures) resolve against its folder, and a
+//! path that leaves the folder, by `..` or through a symlink, is refused.
+//! A package's files resolve against the package's own folder, under the
+//! same rule: a template, being a package, reads only what it ships with,
+//! never the document's folder. See [`Packages`] for where packages come
+//! from.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
-#[cfg(not(feature = "network"))]
-use typst::diag::FileError;
-use typst::diag::FileResult;
+use typst::diag::{FileError, FileResult, PackageError};
 use typst::foundations::{Bytes, Datetime, Duration};
+use typst::syntax::package::PackageSpec;
 use typst::syntax::{FileId, RootedPath, Source, VirtualPath, VirtualRoot};
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
 use typst::{Features, Library, LibraryExt, World};
 use typst_kit::fonts::FontStore;
 
-#[cfg(feature = "network")]
-use typst_kit::{
-    downloader::SystemDownloader,
-    files::{FileStore, FsRoot, SystemFiles},
-    packages::SystemPackages,
-};
+use crate::templates;
+
+/// Where a world finds the packages a source imports: the templates
+/// twig-export ships, from memory; then each folder given, laid out as
+/// Typst lays out its own (`namespace/name/version/`), in order. With the
+/// `network` feature, then Typst's own package folders, and Typst Universe,
+/// downloading as typst-cli does; without it, never the network: a package
+/// is installed first ([`crate::install`]).
+#[derive(Clone, Debug, Default)]
+pub struct Packages {
+    dirs: Vec<PathBuf>,
+}
+
+impl Packages {
+    /// The built-in templates, and the packages in each of `dirs`.
+    pub fn new(dirs: impl IntoIterator<Item = PathBuf>) -> Self {
+        Packages {
+            dirs: dirs.into_iter().collect(),
+        }
+    }
+
+    /// The folders searched, in order.
+    pub fn dirs(&self) -> &[PathBuf] {
+        &self.dirs
+    }
+
+    /// The file at `path` in the package `spec`.
+    fn load(&self, spec: &PackageSpec, path: &VirtualPath) -> FileResult<Bytes> {
+        if spec.namespace == templates::NAMESPACE {
+            let builtin = templates::builtin(&spec.name)
+                .filter(|_| spec.version.to_string() == templates::VERSION);
+            let Some(t) = builtin else {
+                return Err(PackageError::NotFound(spec.clone()).into());
+            };
+            return match path.get_without_slash() {
+                "typst.toml" => Ok(Bytes::from_string(t.manifest)),
+                "lib.typ" => Ok(Bytes::from_string(t.source)),
+                other => Err(FileError::NotFound(other.into())),
+            };
+        }
+        let at = |dir: &Path| {
+            dir.join(spec.namespace.as_str())
+                .join(spec.name.as_str())
+                .join(spec.version.to_string())
+        };
+        if let Some(dir) = self.dirs.iter().map(|d| at(d)).find(|d| d.is_dir()) {
+            return confined(&dir, path);
+        }
+        #[cfg(feature = "network")]
+        {
+            use typst_kit::{downloader::SystemDownloader, packages::SystemPackages};
+            static SYSTEM: std::sync::OnceLock<SystemPackages> = std::sync::OnceLock::new();
+            let system = SYSTEM.get_or_init(|| {
+                SystemPackages::new(SystemDownloader::new(concat!(
+                    "twig-export/",
+                    env!("CARGO_PKG_VERSION")
+                )))
+            });
+            let root = system.obtain(spec)?;
+            confined(root.path(), path)
+        }
+        #[cfg(not(feature = "network"))]
+        Err(PackageError::NotFound(spec.clone()).into())
+    }
+}
+
+/// The file at `path` under `root`, read, unless it is not under `root`
+/// once every symlink on the way is followed.
+pub(crate) fn confined(root: &Path, path: &VirtualPath) -> FileResult<Bytes> {
+    let joined = path.realize(root)?;
+    fn io(p: &Path) -> impl Fn(std::io::Error) -> FileError + '_ {
+        move |e| FileError::from_io(e, p)
+    }
+    let real = std::fs::canonicalize(&joined).map_err(io(&joined))?;
+    let base = std::fs::canonicalize(root).map_err(io(root))?;
+    if !real.starts_with(&base) {
+        return Err(FileError::AccessDenied);
+    }
+    if real.is_dir() {
+        return Err(FileError::IsDirectory);
+    }
+    std::fs::read(&real).map(Bytes::new).map_err(io(&real))
+}
 
 pub(crate) struct ExportWorld {
     library: LazyHash<Library>,
     fonts: Arc<FontStore>,
     main: Source,
     /// The folder a document's relative paths (its pictures) resolve against.
-    #[cfg(not(feature = "network"))]
-    root: std::path::PathBuf,
-    #[cfg(feature = "network")]
-    files: FileStore<SystemFiles>,
+    root: PathBuf,
+    packages: Packages,
+    /// Every file read once, for the compile's many asks.
+    files: Mutex<HashMap<FileId, FileResult<Bytes>>>,
+    sources: Mutex<HashMap<FileId, FileResult<Source>>>,
 }
 
 impl ExportWorld {
@@ -56,7 +134,7 @@ impl ExportWorld {
     /// A world over `typ` whose relative paths resolve against `root`: the
     /// document's own folder, for an editor that has a document open
     /// wherever it was launched.
-    pub(crate) fn rooted(typ: &str, features: Features, root: &std::path::Path) -> Self {
+    pub(crate) fn rooted(typ: &str, features: Features, root: &Path) -> Self {
         Self::with_fonts(typ, features, root, Arc::new(fonts()))
     }
 
@@ -66,7 +144,7 @@ impl ExportWorld {
     pub(crate) fn with_fonts(
         typ: &str,
         features: Features,
-        root: &std::path::Path,
+        root: &Path,
         fonts: Arc<FontStore>,
     ) -> Self {
         let vpath = VirtualPath::new("main.typ").expect("main.typ is a valid virtual path");
@@ -74,30 +152,34 @@ impl ExportWorld {
 
         let library = Library::builder().with_features(features).build();
 
-        #[cfg(feature = "network")]
-        let files = FileStore::new(SystemFiles::new(
-            FsRoot::new(root.to_path_buf()),
-            SystemPackages::new(SystemDownloader::new(concat!(
-                "twig-export/",
-                env!("CARGO_PKG_VERSION")
-            ))),
-        ));
-
         ExportWorld {
             library: LazyHash::new(library),
             fonts,
             main: Source::new(id, typ.into()),
-            #[cfg(not(feature = "network"))]
             root: root.to_path_buf(),
-            #[cfg(feature = "network")]
-            files,
+            packages: Packages::default(),
+            files: Mutex::default(),
+            sources: Mutex::default(),
         }
+    }
+
+    /// This world, finding packages in `packages`.
+    pub(crate) fn with_packages(mut self, packages: Packages) -> Self {
+        self.packages = packages;
+        self
     }
 
     /// The generated source text, for quoting the offending line in a
     /// compile-error message.
     pub(crate) fn main_text(&self) -> &str {
         self.main.text()
+    }
+
+    fn load(&self, id: FileId) -> FileResult<Bytes> {
+        match id.root() {
+            VirtualRoot::Project => confined(&self.root, id.vpath()),
+            VirtualRoot::Package(spec) => self.packages.load(spec, id.vpath()),
+        }
     }
 }
 
@@ -125,39 +207,27 @@ impl World for ExportWorld {
         self.main.id()
     }
 
-    #[cfg(feature = "network")]
     fn source(&self, id: FileId) -> FileResult<Source> {
         if id == self.main.id() {
-            Ok(self.main.clone())
-        } else {
-            self.files.source(id)
+            return Ok(self.main.clone());
         }
+        let mut sources = self.sources.lock().expect("the sources lock");
+        sources
+            .entry(id)
+            .or_insert_with(|| {
+                let bytes = self.file(id)?;
+                let text = std::str::from_utf8(&bytes).map_err(|_| FileError::InvalidUtf8)?;
+                Ok(Source::new(id, text.into()))
+            })
+            .clone()
     }
 
-    #[cfg(not(feature = "network"))]
-    fn source(&self, id: FileId) -> FileResult<Source> {
-        if id == self.main.id() {
-            Ok(self.main.clone())
-        } else {
-            Err(FileError::NotFound(id.vpath().get_without_slash().into()))
-        }
-    }
-
-    /// Besides `#import`s of `@preview/...` packages (only resolved with the
-    /// `network` feature), the only files Typst asks for are the images a
-    /// document links to and any files a package itself reads. Both resolve
-    /// against the world's root / the package's own root.
-    #[cfg(feature = "network")]
+    /// Besides the packages a source imports, the only files Typst asks for
+    /// are the pictures a document links to and the files a package reads
+    /// of its own.
     fn file(&self, id: FileId) -> FileResult<Bytes> {
-        self.files.file(id)
-    }
-
-    #[cfg(not(feature = "network"))]
-    fn file(&self, id: FileId) -> FileResult<Bytes> {
-        let path = self.root.join(id.vpath().get_without_slash());
-        std::fs::read(&path)
-            .map(Bytes::new)
-            .map_err(|e| FileError::from_io(e, &path))
+        let mut files = self.files.lock().expect("the files lock");
+        files.entry(id).or_insert_with(|| self.load(id)).clone()
     }
 
     fn font(&self, index: usize) -> Option<Font> {

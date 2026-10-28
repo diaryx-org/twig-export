@@ -105,8 +105,10 @@ fn run() -> Result<()> {
     }
 
     match &args.output {
+        // Typst written out for typst-cli carries a built-in template's
+        // source: typst-cli serves no `twig` namespace.
         None => {
-            print!("{}", rendered.typst);
+            print!("{}", twig_export::templates::inline(&rendered.typst));
             Ok(())
         }
         Some(path) => {
@@ -116,7 +118,7 @@ fn run() -> Result<()> {
                 .unwrap_or_default()
                 .to_ascii_lowercase();
             match ext.as_str() {
-                "typ" => std::fs::write(path, &rendered.typst)
+                "typ" => std::fs::write(path, twig_export::templates::inline(&rendered.typst))
                     .with_context(|| format!("writing {}", path.display())),
                 "pdf" => write_pdf(path, &rendered.typst),
                 "html" | "htm" => write_html(path, &rendered.typst),

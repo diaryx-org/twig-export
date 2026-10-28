@@ -3,7 +3,7 @@
 // Justified on paper, with wide margins and spaced paragraphs; ragged when
 // reflowed.
 //
-// A twig-export template: see classic.typ for the function's arguments.
+// A twig-export template: see classic/lib.typ for the function's arguments.
 #let twig-template(
   body,
   layout: "paged",
@@ -13,6 +13,7 @@
   size: 11pt,
   face: "serif",
   dark: false,
+  meta: (:),
 ) = {
   let faces = (
     serif: ("Literata", "Noto Serif", "Libertinus Serif"),
