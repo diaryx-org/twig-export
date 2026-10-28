@@ -91,6 +91,26 @@ impl Typesetter {
         self
     }
 
+    /// This typesetter, setting in the faces of `files` (TrueType or
+    /// OpenType, each its file's bytes) before the embedded ones and the
+    /// system's: a host's own faces, which the system may not have (an
+    /// iPhone has none of an app's), found first under their names.
+    pub fn with_fonts(mut self, files: impl IntoIterator<Item = Vec<u8>>) -> Self {
+        let mut store = FontStore::new();
+        for file in files {
+            store.extend(
+                typst::text::Font::iter(typst::foundations::Bytes::new(file)).map(|font| {
+                    let info = font.info().clone();
+                    (font, info)
+                }),
+            );
+        }
+        store.extend(typst_kit::fonts::embedded());
+        store.extend(typst_kit::fonts::system());
+        self.fonts = Arc::new(store);
+        self
+    }
+
     /// This typesetter, finding packages in `packages`.
     pub fn with_packages(mut self, packages: Packages) -> Self {
         self.packages = packages;
@@ -459,6 +479,25 @@ mod tests {
     use super::*;
 
     const DOC: &str = "#set page(width: 200pt, height: 100pt)\n= One\n#pagebreak()\n= Two";
+
+    /// A host's font files come first, ahead of the embedded faces and the
+    /// system's, which are all still there after them.
+    #[test]
+    fn a_hosts_fonts_are_found_first() {
+        let (font, _) = typst_kit::fonts::embedded()
+            .last()
+            .expect("an embedded face");
+        let family = font.info().family.clone();
+        let plain = Typesetter::new();
+        let given = Typesetter::new().with_fonts([font.data().to_vec()]);
+        let book = given.fonts.book();
+        assert_eq!(
+            book.info(0).map(|i| i.family.as_str()),
+            Some(family.as_str())
+        );
+        let count = |b: &typst::text::FontBook| (0..).take_while(|&i| b.info(i).is_some()).count();
+        assert_eq!(count(book), count(plain.fonts.book()) + 1);
+    }
 
     #[test]
     fn a_typesetter_sets_what_compile_in_sets() {
