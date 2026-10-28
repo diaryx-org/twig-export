@@ -1,0 +1,492 @@
+//! Adapters: a Typst Universe template made a twig-export template.
+//!
+//! A Universe template is a package with a starter project, whose main file
+//! shows how its function is called: `#show: ieee.with(title: [...],
+//! authors: (...), ...)`, or `#show: it => report(..., it)`. Every template
+//! names its arguments its own way, so twig-export cannot call one as it
+//! calls its own; an adapter is a small package that does, defining
+//! `twig-template` over the Universe template's function. [`adapt`] writes
+//! one from the starter: each argument the starter passes is given the
+//! frontmatter key of its name (or a common name for it: `author` for
+//! `authors`, `keywords` for `index-terms`), made the shape the starter's
+//! value has: a text, content, a list, people, a dictionary with the keys
+//! the starter's has, a date. An argument the frontmatter has nothing for
+//! is left to the template's default.
+//!
+//! An adapter sets the paged layout only. A Universe template is made for
+//! paper, and reflowing one (its columns, its title page) is a template's
+//! own work; an editor reflows with a template of its own instead.
+//!
+//! The document's values are data: a string is set as text, never
+//! evaluated as markup, so frontmatter cannot run as code.
+
+use std::fmt::Write as _;
+use std::path::Path;
+
+use anyhow::{Context, Result, bail};
+
+use crate::templates::{Manifest, Spec};
+
+/// The namespace adapters are written under.
+pub const NAMESPACE: &str = "adapted";
+
+/// An adapter written: its spec, its files, and what a reader should know
+/// of it.
+#[derive(Debug)]
+pub struct Adapter {
+    pub spec: Spec,
+    /// `typst.toml` and `lib.typ`.
+    pub files: Vec<(&'static str, String)>,
+    /// Each of the starter's arguments, and the frontmatter keys it is
+    /// given, in order.
+    pub args: Vec<(String, Vec<String>)>,
+}
+
+impl Adapter {
+    /// Write the adapter's package under `dir`, a folder of packages.
+    pub fn write(&self, dir: &Path) -> Result<()> {
+        let at = self.spec.dir_in(dir);
+        std::fs::create_dir_all(&at).with_context(|| format!("making {}", at.display()))?;
+        for (name, text) in &self.files {
+            std::fs::write(at.join(name), text)
+                .with_context(|| format!("writing {}", at.join(name).display()))?;
+        }
+        Ok(())
+    }
+}
+
+/// An adapter for the Universe template `spec`, installed at `package`.
+pub fn adapt(spec: &Spec, package: &Path) -> Result<Adapter> {
+    let toml = std::fs::read_to_string(package.join("typst.toml"))
+        .with_context(|| format!("{spec} has no typst.toml"))?;
+    let manifest = Manifest::parse(&toml)?;
+    let Some(starter) = &manifest.template else {
+        bail!("{spec} is a package, not a template: it has no starter to adapt");
+    };
+    let main = package.join(&starter.path).join(&starter.entrypoint);
+    let text = std::fs::read_to_string(&main)
+        .with_context(|| format!("reading {spec}'s starter, {}", main.display()))?;
+    let call = Call::find(&text)
+        .with_context(|| format!("{spec}'s starter applies no template function with #show"))?;
+    let import = imports_of(&text, spec)
+        .with_context(|| format!("{spec}'s starter does not import {spec}"))?;
+
+    let mut mapped = Vec::new();
+    let mut lines = String::new();
+    for (name, value) in &call.args {
+        if name == "paper" || name == "paper-size" {
+            let _ = writeln!(
+                lines,
+                "  if paper != none {{ args.insert({name:?}, paper) }}"
+            );
+            mapped.push((name.clone(), vec!["(the paper)".into()]));
+            continue;
+        }
+        let keys = meta_keys(name);
+        let quoted: Vec<String> = keys.iter().map(|k| format!("{k:?}")).collect();
+        let _ = writeln!(
+            lines,
+            "  // The starter: {name}: {}\n  \
+             let v = _first(meta, ({},))\n  \
+             if v != none {{ args.insert({name:?}, {}) }}",
+            one_line(value),
+            quoted.join(", "),
+            Shape::of(value).call("v")
+        );
+        mapped.push((name.clone(), keys));
+    }
+
+    let label = manifest
+        .package
+        .name
+        .split('-')
+        .map(title_case)
+        .collect::<Vec<_>>()
+        .join(" ");
+    let adapter = Spec {
+        namespace: NAMESPACE.into(),
+        ..spec.clone()
+    };
+    let (a, b, c) = spec.version;
+    let typst_toml = format!(
+        "[package]\n\
+         name = {name:?}\n\
+         version = \"{a}.{b}.{c}\"\n\
+         entrypoint = \"lib.typ\"\n\
+         description = \"twig-export's adapter for {spec}.\"\n\
+         \n\
+         [tool.twig]\n\
+         label = {label:?}\n\
+         layouts = [\"paged\"]\n",
+        name = spec.name,
+    );
+    // Either way a starter calls it, the function takes the body last.
+    let call_body = format!("{}(..args, body)", call.function);
+    let lib = format!(
+        "// Generated by twig-export from {spec}'s starter: twig-export's\n\
+         // template function over the template's own. The document's\n\
+         // frontmatter is given to the arguments the starter names; every other\n\
+         // argument is the template's default. Edit freely.\n\
+         {import}\n\
+         \n\
+         {HELPERS}\n\
+         #let twig-template(body, meta: (:), paper: none, ..rest) = {{\n  \
+         let args = (:)\n\
+         {lines}  \
+         {call_body}\n\
+         }}\n",
+    );
+    Ok(Adapter {
+        spec: adapter,
+        files: vec![("typst.toml", typst_toml), ("lib.typ", lib)],
+        args: mapped,
+    })
+}
+
+/// What an adapter's lines call to make a document's value the shape a
+/// template takes.
+const HELPERS: &str = r#"#let _first(meta, keys) = {
+  for k in keys { if k in meta and meta.at(k) != none { return meta.at(k) } }
+  none
+}
+#let _text(v) = if type(v) == array { v.map(x => if type(x) == dictionary { x.at("name", default: "") } else { str(x) }).join(", ") } else { str(v) }
+#let _content(v) = if type(v) == str { v.split("\n").map(l => [#l]).join(linebreak()) } else { [#_text(v)] }
+#let _people(v, keys) = (if type(v) == array { v } else { (v,) }).map(p => {
+  let d = if type(p) == dictionary { p } else { (name: str(p)) }
+  for k in keys { if k not in d { d.insert(k, "") } }
+  d
+})
+#let _dict(v, keys) = {
+  let d = if type(v) == dictionary { v } else { (:) }
+  for k in keys { if k not in d { d.insert(k, none) } }
+  d
+}
+#let _list(v) = if type(v) == array { v.map(str) } else { (str(v),) }
+#let _date(v) = if type(v) == str and v.len() >= 10 and v.at(4) == "-" {
+  datetime(year: int(v.slice(0, 4)), month: int(v.slice(5, 7)), day: int(v.slice(8, 10)))
+} else { v }
+#let _bool(v) = v == true"#;
+
+/// The frontmatter keys an argument named `name` takes its value from, in
+/// order: its own name, then the common names for what it is.
+fn meta_keys(name: &str) -> Vec<String> {
+    let common: &[&str] = match name {
+        "doc-title" => &["title"],
+        "shorttitle" | "short-title" => &["short-title", "title"],
+        "author" => &["authors"],
+        "authors" => &["author"],
+        "abstract" => &["summary"],
+        "keywords" => &["tags"],
+        "index-terms" => &["keywords", "tags"],
+        _ => &[],
+    };
+    std::iter::once(name)
+        .chain(common.iter().copied())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The shape a starter gives an argument's value.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Shape {
+    Text,
+    Content,
+    /// An array of dictionaries, each with at least these keys.
+    People(Vec<String>),
+    /// A dictionary with these keys.
+    Dict(Vec<String>),
+    List,
+    Date,
+    /// Something else: the document's value as it is.
+    Other,
+}
+
+impl Shape {
+    fn of(value: &str) -> Shape {
+        let v = value.trim();
+        if v.starts_with('"') {
+            Shape::Text
+        } else if v.starts_with('[') || v.starts_with("lorem(") {
+            Shape::Content
+        } else if let Some(inner) = v.strip_prefix('(').and_then(until_close) {
+            let items = split_top(inner);
+            let dicts: Vec<Vec<String>> = items
+                .iter()
+                .filter_map(|i| i.trim().strip_prefix('(').and_then(until_close))
+                .map(|d| named_args(d).into_iter().map(|(k, _)| k).collect())
+                .filter(|keys: &Vec<String>| !keys.is_empty())
+                .collect();
+            let own = named_args(inner);
+            if !dicts.is_empty() {
+                // The keys every person has: the ones a template may need.
+                let mut keys = dicts[0].clone();
+                keys.retain(|k| dicts.iter().all(|d| d.contains(k)));
+                Shape::People(keys)
+            } else if !own.is_empty() {
+                Shape::Dict(own.into_iter().map(|(k, _)| k).collect())
+            } else {
+                Shape::List
+            }
+        } else if v.starts_with("datetime(") {
+            Shape::Date
+        } else if v.starts_with("datetime.today()") && v.contains("display") {
+            Shape::Text
+        } else if is_ident(v) {
+            // A variable the starter set above: a text, as most are.
+            Shape::Text
+        } else {
+            Shape::Other
+        }
+    }
+
+    /// The Typst that makes `v` this shape.
+    fn call(&self, v: &str) -> String {
+        let keys = |ks: &[String]| {
+            let q: Vec<String> = ks.iter().map(|k| format!("{k:?}")).collect();
+            format!("({},)", q.join(", "))
+        };
+        match self {
+            Shape::Text => format!("_text({v})"),
+            Shape::Content => format!("_content({v})"),
+            Shape::People(ks) => format!("_people({v}, {})", keys(ks)),
+            Shape::Dict(ks) => format!("_dict({v}, {})", keys(ks)),
+            Shape::List => format!("_list({v})"),
+            Shape::Date => format!("_date({v})"),
+            Shape::Other => v.to_owned(),
+        }
+    }
+}
+
+/// `value` on one line, for a comment.
+fn one_line(value: &str) -> String {
+    let flat: String = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    match flat.char_indices().nth(60) {
+        Some((i, _)) => format!("{}…", &flat[..i]),
+        None => flat,
+    }
+}
+
+/// The template call in a starter: the function, and its named arguments,
+/// each with the expression the starter gives it.
+#[derive(Debug, PartialEq)]
+struct Call {
+    function: String,
+    args: Vec<(String, String)>,
+}
+
+impl Call {
+    fn find(text: &str) -> Option<Call> {
+        let code = strip_comments(text);
+        for (at, _) in code.match_indices("#show:") {
+            let rest = code[at + 6..].trim_start();
+            // `#show: f.with(..)`
+            if let Some((function, after)) = rest.split_once(".with(")
+                && is_ident(function)
+            {
+                return Some(Call {
+                    function: function.into(),
+                    args: named_args(until_close(after)?),
+                });
+            }
+            // `#show: it => f(.., it)` or `#show: doc => f(.., doc)`
+            if let Some((param, after)) = rest.split_once("=>")
+                && is_ident(param.trim())
+                && let Some((function, args)) = after.trim_start().split_once('(')
+                && is_ident(function)
+            {
+                return Some(Call {
+                    function: function.into(),
+                    args: named_args(until_close(args)?),
+                });
+            }
+        }
+        None
+    }
+}
+
+/// The import of `spec` in a starter, as a line.
+fn imports_of(text: &str, spec: &Spec) -> Option<String> {
+    let needle = format!("\"{spec}\"");
+    text.lines()
+        .map(str::trim)
+        .find(|l| l.starts_with("#import") && l.contains(&needle))
+        .map(str::to_owned)
+}
+
+fn is_ident(s: &str) -> bool {
+    s.chars()
+        .next()
+        .is_some_and(|c| c.is_alphabetic() || c == '_')
+        && s.chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+}
+
+fn title_case(word: &str) -> String {
+    let mut c = word.chars();
+    match c.next() {
+        Some(f) => f.to_uppercase().chain(c).collect(),
+        None => String::new(),
+    }
+}
+
+/// `text` without its `//` and `/* */` comments, strings kept whole.
+fn strip_comments(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    let mut in_str = false;
+    while let Some(c) = chars.next() {
+        if in_str {
+            out.push(c);
+            if c == '\\' {
+                if let Some(n) = chars.next() {
+                    out.push(n);
+                }
+            } else if c == '"' {
+                in_str = false;
+            }
+            continue;
+        }
+        match (c, chars.peek()) {
+            ('"', _) => {
+                in_str = true;
+                out.push(c);
+            }
+            ('/', Some('/')) => {
+                for n in chars.by_ref() {
+                    if n == '\n' {
+                        out.push('\n');
+                        break;
+                    }
+                }
+            }
+            ('/', Some('*')) => {
+                chars.next();
+                let mut last = ' ';
+                for n in chars.by_ref() {
+                    if last == '*' && n == '/' {
+                        break;
+                    }
+                    last = n;
+                }
+            }
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// The text of a call's arguments: `text` up to the parenthesis that closes
+/// the one before it.
+fn until_close(text: &str) -> Option<&str> {
+    let mut depth = 0usize;
+    let mut in_str = false;
+    let mut escaped = false;
+    for (i, c) in text.char_indices() {
+        if in_str {
+            match (escaped, c) {
+                (true, _) => escaped = false,
+                (false, '\\') => escaped = true,
+                (false, '"') => in_str = false,
+                _ => {}
+            }
+            continue;
+        }
+        match c {
+            '"' => in_str = true,
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' if depth == 0 => return Some(&text[..i]),
+            ')' | ']' | '}' => depth -= 1,
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The named arguments in a call's text, each with its expression.
+fn named_args(text: &str) -> Vec<(String, String)> {
+    split_top(text)
+        .into_iter()
+        .filter_map(|p| {
+            let (name, value) = p.split_once(':')?;
+            let name = name.trim();
+            is_ident(name).then(|| (name.to_owned(), value.trim().to_owned()))
+        })
+        .collect()
+}
+
+/// `text` split at its top-level commas.
+fn split_top(text: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut in_str = false;
+    let mut escaped = false;
+    let mut start = 0;
+    for (i, c) in text.char_indices() {
+        if in_str {
+            match (escaped, c) {
+                (true, _) => escaped = false,
+                (false, '\\') => escaped = true,
+                (false, '"') => in_str = false,
+                _ => {}
+            }
+            continue;
+        }
+        match c {
+            '"' => in_str = true,
+            '(' | '[' | '{' => depth += 1,
+            ')' | ']' | '}' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                parts.push(&text[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&text[start..]);
+    parts
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_with_call_is_read_past_comments_and_nesting() {
+        let starter = r#"#import "@preview/x:1.0.0": paper
+// #show: other.with(title: "no")
+#show: paper.with(
+  title: [A (title), with commas],
+  authors: ((name: "A", email: "a@b"), (name: "B")),
+  /* note: a comment, ) */
+  date: datetime(year: 2024, month: 3, day: 19),
+  logo: image("logo.png"),
+)
+= Body"#;
+        let call = Call::find(starter).unwrap();
+        assert_eq!(call.function, "paper");
+        let names: Vec<&str> = call.args.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, ["title", "authors", "date", "logo"]);
+        assert_eq!(Shape::of(&call.args[0].1), Shape::Content);
+        // Only the keys every author has.
+        assert_eq!(
+            Shape::of(&call.args[1].1),
+            Shape::People(vec!["name".into()])
+        );
+        assert_eq!(Shape::of(&call.args[2].1), Shape::Date);
+        assert_eq!(Shape::of(&call.args[3].1), Shape::Other);
+        assert_eq!(
+            Shape::of("(name: \"A\", address: [B])"),
+            Shape::Dict(vec!["name".into(), "address".into()])
+        );
+        assert_eq!(Shape::of("(\"a\", \"b\")"), Shape::List);
+    }
+
+    #[test]
+    fn a_closure_call_is_read_without_its_body() {
+        let starter = "#show: it => report(\n  doc-title: \"T\",\n  author: \"A\",\n  it\n)";
+        let call = Call::find(starter).unwrap();
+        assert_eq!(call.function, "report");
+        let names: Vec<&str> = call.args.iter().map(|(n, _)| n.as_str()).collect();
+        assert_eq!(names, ["doc-title", "author"]);
+    }
+}

@@ -47,6 +47,11 @@ mod typst_world;
 #[cfg(feature = "pdf")]
 pub mod pdf;
 
+#[cfg(feature = "install")]
+pub mod install;
+
+pub mod adapt;
+
 #[cfg(feature = "html")]
 pub mod html;
 
@@ -194,12 +199,16 @@ fn prepare(
     if let Some((lang, text)) = doc.metadata() {
         let meta = meta::parse_metadata(lang, text)?;
         unfired_bindings = meta::apply_metadata(&mut cfg.document, &meta);
-        // The template is given only the keys the config lists.
+        // The template is given only the keys the config lists, or every
+        // key, for `*`.
         let keys = cfg.document.template_meta.clone().unwrap_or_default();
-        cfg.document.meta = keys
-            .iter()
-            .filter_map(|k| Some((k.clone(), meta.get(k)?.clone())))
-            .collect();
+        cfg.document.meta = if keys.iter().any(|k| k == "*") {
+            meta.clone()
+        } else {
+            keys.iter()
+                .filter_map(|k| Some((k.clone(), meta.get(k)?.clone())))
+                .collect()
+        };
     }
 
     // A template named by the config or bound from the frontmatter must be

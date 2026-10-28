@@ -68,6 +68,7 @@ pub fn compile_in(typ: &str, root: &Path) -> Result<Vec<u8>> {
 pub struct Typesetter {
     fonts: Arc<FontStore>,
     packages: Packages,
+    today: Option<typst::foundations::Datetime>,
 }
 
 impl Typesetter {
@@ -77,7 +78,17 @@ impl Typesetter {
         Typesetter {
             fonts: Arc::new(fonts()),
             packages: Packages::default(),
+            today: None,
         }
+    }
+
+    /// This typesetter, its `datetime.today()` the date `(year, month,
+    /// day)`: for an editor, today's, which many templates date a document
+    /// by when it gives no date. `None` for none, which makes asking an
+    /// error.
+    pub fn with_today(mut self, today: Option<(i32, u8, u8)>) -> Self {
+        self.today = today.and_then(|(y, m, d)| typst::foundations::Datetime::from_ymd(y, m, d));
+        self
     }
 
     /// This typesetter, finding packages in `packages`.
@@ -140,6 +151,58 @@ impl Typesetter {
         })
     }
 
+    /// Set [`crate::templates::SAMPLE`] under `template` in each of
+    /// `layouts`, light and dark, through the markup and through the words,
+    /// and check the two set alike, with the sample's words where the
+    /// sample has them: what makes a template one an editor can set and
+    /// edit on. An error says what failed, where.
+    pub fn check(&self, template: &str, layouts: &[String]) -> Result<()> {
+        use crate::templates::SAMPLE;
+        let format = twig_markdown::format();
+        let ext = crate::Extensions::default();
+        let root = std::env::temp_dir();
+        // The sample's own date, so a template that dates by today sets.
+        let ts = self.clone().with_today(Some((2026, 10, 27)));
+        let this = &ts;
+        for layout in layouts {
+            for dark in [false, true] {
+                let at = || format!("{template}, {layout}{}", if dark { ", dark" } else { "" });
+                let mut cfg = crate::config::Config::default();
+                cfg.document.template = Some(template.into());
+                cfg.document.layout = Some(layout.clone());
+                cfg.document.dark = Some(dark);
+                cfg.document.template_meta = Some(vec!["*".into()]);
+                if layout == "reflow" {
+                    cfg.document.page_width = Some("480pt".into());
+                }
+                let typst = crate::render(SAMPLE, format, &cfg, ext)?.typst;
+                let markup = this
+                    .pdf(&typst, &root)
+                    .map_err(|e| anyhow!("{}: {e:#}", at()))?;
+                let words = crate::render_words(crate::parse(SAMPLE, format, ext)?, SAMPLE, &cfg)?;
+                let set = this
+                    .lay_out(&words, &root)
+                    .map_err(|e| anyhow!("{}: {e:#}", at()))?;
+                if set.pdf()? != markup {
+                    bail!("{}: the words set otherwise than the markup", at());
+                }
+                let mut named = 0;
+                for g in set.pages().iter().flat_map(|p| &p.glyphs) {
+                    let Some(r) = &g.source else { continue };
+                    named += 1;
+                    let byte = SAMPLE.get(r.clone()).unwrap_or_default();
+                    if byte.to_lowercase() != g.text.to_lowercase() {
+                        bail!("{}: a glyph {:?} is set from {byte:?}", at(), g.text);
+                    }
+                }
+                if named < 100 {
+                    bail!("{}: only {named} glyphs are the document's", at());
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn set(&self, typ: &str, root: &Path) -> Result<PagedDocument> {
         let world = self.world(typ, root);
         checked(&world, typst::compile(&world))
@@ -148,6 +211,7 @@ impl Typesetter {
     fn world(&self, typ: &str, root: &Path) -> ExportWorld {
         ExportWorld::with_fonts(typ, Features::default(), root, Arc::clone(&self.fonts))
             .with_packages(self.packages.clone())
+            .with_today(self.today)
     }
 }
 
@@ -322,23 +386,44 @@ fn checked(
             // Typst diagnostics point into generated source the user never
             // wrote, so quote the offending line as well as the message.
             let mut msg = String::from("typst failed to compile the generated document:\n");
+            let mut ours = false;
             for e in errors.iter().take(10) {
                 msg.push_str(&format!("  - {}\n", e.message));
                 // Quote the offending source. Typst is pointing into markup we
                 // generated, not anything the user wrote, so the message alone
                 // is rarely enough to act on.
-                if e.span.id() == Some(world.main())
+                let Some(id) = e.span.id() else { continue };
+                if id == world.main() {
+                    ours = true;
+                    if let Some(range) = world.range(e.span)
+                        && let Some(text) = world.main_text().get(range)
+                    {
+                        msg.push_str(&format!("    at: {}\n", text.trim()));
+                    }
+                } else if let typst::syntax::VirtualRoot::Package(spec) = id.root()
+                    && let Ok(source) = world.source(id)
                     && let Some(range) = world.range(e.span)
-                    && let Some(text) = world.main_text().get(range)
                 {
-                    msg.push_str(&format!("    at: {}\n", text.trim()));
+                    // In a package: a template, which twig-export did not write.
+                    let line = source
+                        .lines()
+                        .byte_to_line(range.start)
+                        .map_or(0, |l| l + 1);
+                    let text = source.text().get(range).unwrap_or_default();
+                    msg.push_str(&format!(
+                        "    in {spec}/{}:{line}: {}\n",
+                        id.vpath().get_without_slash(),
+                        text.lines().next().unwrap_or_default().trim()
+                    ));
                 }
             }
-            msg.push_str(
-                "\nThis is a twig-export bug or a bad `raw.typst` escape hatch in your config.\n\
-                 Re-run with `-o out.typ` to inspect the generated source.",
-            );
-            bail!(msg);
+            if ours {
+                msg.push_str(
+                    "\nThis is a twig-export bug or a bad `raw.typst` escape hatch in your config.\n\
+                     Re-run with `-o out.typ` to inspect the generated source.",
+                );
+            }
+            bail!(msg.trim_end().to_owned());
         }
     }
 }

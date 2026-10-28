@@ -259,6 +259,52 @@ pub fn installed(dir: &Path) -> Vec<Installed> {
     found
 }
 
+/// The document a template is checked with (`pdf::Typesetter::check`):
+/// the frontmatter most templates set from, and every construct the
+/// emitter makes.
+pub const SAMPLE: &str = "\
+---
+title: A sample document
+subtitle: As a template sets it
+author: Ada Lovelace
+date: 2026-10-27
+abstract: A short document with every construct, to set a template with.
+keywords: [sample, template]
+---
+
+# A title
+
+A paragraph with *emphasis*, **strong**, `code`, [a link](https://example.com),
+and a footnote[^1]. It goes on long enough to wrap across a line or two, so
+that the leading and the measure show.
+
+## A section
+
+> A quotation, set apart.
+
+1. One
+2. Two
+
+- A bullet
+- Another
+
+### A subsection
+
+| Name | Qty |
+|------|----:|
+| Pear | 3 |
+
+```rust
+fn main() {}
+```
+
+---
+
+A last paragraph.
+
+[^1]: The note.
+";
+
 /// `typ` with each built-in template's import replaced by its source: the
 /// Typst written for typst-cli, which serves no `twig` namespace.
 pub fn inline(typ: &str) -> String {

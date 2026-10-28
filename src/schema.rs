@@ -394,8 +394,9 @@ pub fn schema() -> Schema<Constraint> {
         rule(
             vec![K("document"), K("template")],
             Str,
-            // Open: a template package is named by its spec.
-            Some(vocab(crate::templates::NAMES, false)),
+            // No vocabulary: a template package is named by its spec, which
+            // `prepare` checks.
+            None,
         ),
         rule(
             vec![K("document"), K("layout")],

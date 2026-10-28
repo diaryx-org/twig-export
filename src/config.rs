@@ -76,8 +76,8 @@ pub struct Document {
     /// decides how a page looks, given those.
     pub template: Option<String>,
     /// The frontmatter keys a template is given, as its `meta` dictionary:
-    /// a title, authors, an abstract, for a template that sets them. A key
-    /// not listed stays the document's own.
+    /// a title, authors, an abstract, for a template that sets them; `*`
+    /// for every key. A key not listed stays the document's own.
     pub template_meta: Option<Vec<String>>,
     /// What the frontmatter gave of `template-meta`'s keys, read by
     /// `prepare`.

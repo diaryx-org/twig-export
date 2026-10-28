@@ -17,7 +17,8 @@ use twig_export::{Extensions, Rendered, config::Config, format_from_path, format
 )]
 struct Args {
     /// Input document (.dj/.djot, .md/.markdown, .xml, .html/.htm).
-    input: PathBuf,
+    #[arg(required_unless_present_any = ["install", "adapt", "check"])]
+    input: Option<PathBuf>,
 
     /// Output file. The extension selects the backend: `.typ`, `.pdf`, or
     /// `.html`/`.htm` (experimental — see `html.rs`). Omit to write Typst to
@@ -52,6 +53,28 @@ struct Args {
     /// fired. The answer to "why did my styling do nothing?".
     #[arg(long)]
     explain: bool,
+
+    /// A folder of Typst packages, laid out as Typst's own
+    /// (`namespace/name/version/`), to find templates in. Repeatable; the
+    /// first is where `--install` and `--adapt` write.
+    #[arg(long)]
+    packages: Vec<PathBuf>,
+
+    /// Fetch a Typst Universe package (`@preview/name:1.0.0`), and every
+    /// package it imports, into the first `--packages` folder.
+    #[arg(long, value_name = "SPEC")]
+    install: Option<String>,
+
+    /// Write a twig-export template over a Typst Universe template
+    /// (`@preview/name:1.0.0`), installed in the first `--packages` folder,
+    /// as `@adapted/name:1.0.0` beside it, and check it.
+    #[arg(long, value_name = "SPEC")]
+    adapt: Option<String>,
+
+    /// Check that a template (a built-in's name, or a spec) sets a sample
+    /// document in each of its layouts.
+    #[arg(long, value_name = "TEMPLATE")]
+    check: Option<String>,
 }
 
 fn main() {
@@ -64,17 +87,26 @@ fn main() {
 fn run() -> Result<()> {
     let args = Args::parse();
 
-    let source = std::fs::read_to_string(&args.input)
-        .with_context(|| format!("reading {}", args.input.display()))?;
+    if let Some(spec) = &args.install {
+        install(spec, &args.packages)?;
+    }
+    if let Some(spec) = &args.adapt {
+        adapt(spec, &args.packages)?;
+    }
+    if let Some(template) = &args.check {
+        check(template, &args.packages)?;
+    }
+    let Some(input) = &args.input else {
+        return Ok(());
+    };
+
+    let source =
+        std::fs::read_to_string(input).with_context(|| format!("reading {}", input.display()))?;
 
     let format = match &args.input_format {
         Some(name) => parse_format(name)?,
-        None => format_from_path(&args.input).with_context(|| {
-            format!(
-                "cannot infer a format from {} — pass -i",
-                args.input.display()
-            )
-        })?,
+        None => format_from_path(input)
+            .with_context(|| format!("cannot infer a format from {} — pass -i", input.display()))?,
     };
 
     let (cfg, warnings) = match &args.config {
@@ -120,7 +152,7 @@ fn run() -> Result<()> {
             match ext.as_str() {
                 "typ" => std::fs::write(path, twig_export::templates::inline(&rendered.typst))
                     .with_context(|| format!("writing {}", path.display())),
-                "pdf" => write_pdf(path, &rendered.typst),
+                "pdf" => write_pdf(path, &rendered.typst, &args.packages),
                 "html" | "htm" => write_html(path, &rendered.typst),
                 other => bail!(
                     "unknown output extension {other:?} (expected .typ, .pdf, .html, or .htm)"
@@ -131,13 +163,19 @@ fn run() -> Result<()> {
 }
 
 #[cfg(feature = "pdf")]
-fn write_pdf(path: &std::path::Path, typ: &str) -> Result<()> {
-    let bytes = twig_export::pdf::compile(typ)?;
+fn write_pdf(path: &std::path::Path, typ: &str, packages: &[PathBuf]) -> Result<()> {
+    use twig_export::pdf::{Packages, Typesetter};
+    let cwd = std::env::current_dir().unwrap_or_else(|_| ".".into());
+    // As typst-cli does: a template that dates a document by today sets.
+    let bytes = Typesetter::new()
+        .with_packages(Packages::new(packages.iter().cloned()))
+        .with_today(Some(today()))
+        .pdf(typ, &cwd)?;
     std::fs::write(path, bytes).with_context(|| format!("writing {}", path.display()))
 }
 
 #[cfg(not(feature = "pdf"))]
-fn write_pdf(_path: &std::path::Path, _typ: &str) -> Result<()> {
+fn write_pdf(_path: &std::path::Path, _typ: &str, _packages: &[PathBuf]) -> Result<()> {
     bail!(
         "this build has no PDF backend (built without the `pdf` feature).\n\
          Emit Typst with `-o out.typ` and compile it separately."
@@ -157,6 +195,102 @@ fn write_html(_path: &std::path::Path, _typ: &str) -> Result<()> {
          default — Typst's HTML export is experimental).\n\
          Emit Typst with `-o out.typ` and compile it separately."
     )
+}
+
+/// Today's date, in UTC, as (year, month, day).
+#[cfg(feature = "pdf")]
+fn today() -> (i32, u8, u8) {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    // Howard Hinnant's days-to-civil.
+    let z = (secs / 86_400) as i64 + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u8;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u8;
+    let y = (yoe + era * 400 + i64::from(m <= 2)) as i32;
+    (y, m, d)
+}
+
+/// The first `--packages` folder, where `--install` and `--adapt` write.
+fn first(packages: &[PathBuf]) -> Result<&PathBuf> {
+    packages
+        .first()
+        .context("name a folder of packages to write to, with --packages")
+}
+
+fn spec(s: &str) -> Result<twig_export::templates::Spec> {
+    twig_export::templates::Spec::parse(s)
+        .with_context(|| format!("{s:?} is not a package spec (@namespace/name:1.0.0)"))
+}
+
+#[cfg(feature = "network")]
+fn install(s: &str, packages: &[PathBuf]) -> Result<()> {
+    let downloader = typst_kit::downloader::SystemDownloader::new(concat!(
+        "twig-export/",
+        env!("CARGO_PKG_VERSION")
+    ));
+    let fetched = twig_export::install::install(&spec(s)?, first(packages)?, downloader)?;
+    for spec in fetched {
+        eprintln!("twig-export: installed {spec}");
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "network"))]
+fn install(_s: &str, _packages: &[PathBuf]) -> Result<()> {
+    bail!("this build cannot fetch packages (built without the `network` feature)")
+}
+
+fn adapt(s: &str, packages: &[PathBuf]) -> Result<()> {
+    let spec = spec(s)?;
+    let dir = first(packages)?;
+    let adapter = twig_export::adapt::adapt(&spec, &spec.dir_in(dir))?;
+    adapter.write(dir)?;
+    eprintln!("twig-export: wrote {}", adapter.spec);
+    for (arg, keys) in &adapter.args {
+        eprintln!("  {arg}: from {}", keys.join(" or "));
+    }
+    check(&adapter.spec.to_string(), packages)
+}
+
+#[cfg(feature = "pdf")]
+fn check(template: &str, packages: &[PathBuf]) -> Result<()> {
+    use twig_export::pdf::{Packages, Typesetter};
+    use twig_export::templates::{Manifest, builtin};
+    let manifest = match builtin(template) {
+        Some(b) => b.manifest(),
+        None => {
+            let spec = spec(template)?;
+            let dir = packages
+                .iter()
+                .map(|d| spec.dir_in(d))
+                .find(|d| d.is_dir())
+                .with_context(|| format!("{template} is in none of the --packages folders"))?;
+            let toml = std::fs::read_to_string(dir.join("typst.toml"))?;
+            Manifest::parse(&toml)?
+        }
+    };
+    let twig = manifest.twig().with_context(|| {
+        format!("{template} has no [tool.twig]: it is not a twig-export template")
+    })?;
+    Typesetter::new()
+        .with_packages(Packages::new(packages.iter().cloned()))
+        .check(template, &twig.layouts)?;
+    eprintln!(
+        "twig-export: {template} sets, {}",
+        twig.layouts.join(" and ")
+    );
+    Ok(())
+}
+
+#[cfg(not(feature = "pdf"))]
+fn check(_template: &str, _packages: &[PathBuf]) -> Result<()> {
+    bail!("this build has no Typst (built without the `pdf` feature)")
 }
 
 fn parse_format(name: &str) -> Result<twig::Format> {

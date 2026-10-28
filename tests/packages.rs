@@ -162,3 +162,61 @@ fn typst_for_typst_cli_carries_a_builtin_template() {
         ts.pdf(&inlined, root).unwrap()
     );
 }
+
+/// A Universe template installed by hand, as `install` lays one out: a
+/// package with a starter.
+fn universe_template(packages: &Path) -> PathBuf {
+    let dir = packages.join("preview").join("memo").join("0.2.0");
+    fs::create_dir_all(dir.join("template")).unwrap();
+    fs::write(
+        dir.join("typst.toml"),
+        "[package]\nname = \"memo\"\nversion = \"0.2.0\"\nentrypoint = \"lib.typ\"\n\n\
+         [template]\npath = \"template\"\nentrypoint = \"main.typ\"\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("lib.typ"),
+        "#let memo(title: none, authors: (), date: none, logo: none, body) = {\n\
+         [Memo: #title]\n\
+         for a in authors [ By #a.name of #a.org.]\n\
+         [ On #date.display().]\n\
+         body\n}\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.join("template/main.typ"),
+        "#import \"@preview/memo:0.2.0\": memo\n\
+         #show: memo.with(\n  title: [A memo],\n  \
+         authors: ((name: \"A\", org: \"X\"), (name: \"B\", org: \"Y\", email: \"b@y\")),\n  \
+         date: datetime(year: 2024, month: 1, day: 2),\n  logo: image(\"logo.png\"),\n)\n= Body\n",
+    )
+    .unwrap();
+    dir
+}
+
+#[test]
+fn a_universe_template_is_adapted_from_its_starter() {
+    let dir = scratch("packages-adapted");
+    let packages = dir.join("packages");
+    let at = universe_template(&packages);
+    let spec = Spec::parse("@preview/memo:0.2.0").unwrap();
+    let adapter = twig_export::adapt::adapt(&spec, &at).unwrap();
+    adapter.write(&packages).unwrap();
+    assert_eq!(adapter.spec.to_string(), "@adapted/memo:0.2.0");
+
+    let found = installed(&packages);
+    assert_eq!(found.len(), 1, "only the adapter is a twig-export template");
+    assert_eq!(found[0].manifest.twig().unwrap().layouts, ["paged"]);
+
+    let ts = Typesetter::new().with_packages(Packages::new([packages]));
+    let mut cfg = config("@adapted/memo:0.2.0");
+    cfg.document.template_meta = Some(vec!["*".into()]);
+    let doc = "---\ntitle: Notes\nauthor: Ada\ndate: 2026-10-27\n---\n\nBody.\n";
+    let text = text(&ts, &cfg, doc, &dir).expect("the adapter sets");
+    // A string for content, a name made a person with the keys every
+    // starter author has, an ISO date made a date.
+    assert!(text.contains("Memo: Notes"), "{text}");
+    assert!(text.contains("By Ada of ."), "{text}");
+    assert!(text.contains("On 2026-10-27."), "{text}");
+    assert!(text.contains("Body."), "{text}");
+}

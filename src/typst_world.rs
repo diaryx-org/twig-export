@@ -118,6 +118,8 @@ pub(crate) struct ExportWorld {
     /// The folder a document's relative paths (its pictures) resolve against.
     root: PathBuf,
     packages: Packages,
+    /// The date `datetime.today()` is, if a caller gave one.
+    today: Option<Datetime>,
     /// Every file read once, for the compile's many asks.
     files: Mutex<HashMap<FileId, FileResult<Bytes>>>,
     sources: Mutex<HashMap<FileId, FileResult<Source>>>,
@@ -158,6 +160,7 @@ impl ExportWorld {
             main: Source::new(id, typ.into()),
             root: root.to_path_buf(),
             packages: Packages::default(),
+            today: None,
             files: Mutex::default(),
             sources: Mutex::default(),
         }
@@ -166,6 +169,12 @@ impl ExportWorld {
     /// This world, finding packages in `packages`.
     pub(crate) fn with_packages(mut self, packages: Packages) -> Self {
         self.packages = packages;
+        self
+    }
+
+    /// This world, its `datetime.today()` `today`.
+    pub(crate) fn with_today(mut self, today: Option<Datetime>) -> Self {
+        self.today = today;
         self
     }
 
@@ -234,11 +243,13 @@ impl World for ExportWorld {
         self.fonts.font(index)
     }
 
-    /// `None` means "no reproducible clock", which makes `#datetime.today()`
-    /// an error rather than silently baking today's date into a document that
-    /// is supposed to render identically tomorrow.
+    /// The date the caller gave, the same whatever the offset; `None`, by
+    /// default, means "no reproducible clock", which makes
+    /// `#datetime.today()` an error rather than silently baking today's date
+    /// into a document that is supposed to render identically tomorrow. An
+    /// editor, setting a document as it is now, gives today's.
     fn today(&self, _offset: Option<Duration>) -> Option<Datetime> {
-        None
+        self.today
     }
 }
 

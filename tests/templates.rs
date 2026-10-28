@@ -139,3 +139,13 @@ fn a_template_twig_export_does_not_have_is_refused() {
         "{err:#}"
     );
 }
+
+#[test]
+fn every_builtin_passes_the_check_an_editor_makes() {
+    let ts = Typesetter::new();
+    for name in NAMES {
+        let manifest = twig_export::templates::builtin(name).unwrap().manifest();
+        ts.check(name, &manifest.twig().unwrap().layouts)
+            .unwrap_or_else(|e| panic!("{name}: {e:#}"));
+    }
+}
