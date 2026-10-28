@@ -19,31 +19,45 @@
 //! [`Typesetter`]: the fonts are read once, and Typst's own memoization
 //! makes a compile after a small edit cheaper still. With the `svg` feature
 //! it also sets each page as an SVG, for a preview to draw.
+//!
+//! ── Pages an editor can draw on ────────────────────────────────────────────
+//! [`Typesetter::lay_out`] sets a document from [`crate::render_words`]: the
+//! source with holes, and the author's words, each made Typst content here
+//! with a span into the document's own source. The [`Layout`] it answers is
+//! one compile, as a PDF, as SVG pages, and as each page's [`Glyph`]s, every
+//! one with the bytes of the source it was set from: what an editor needs to
+//! put a caret on the page, or a click on the page into the text.
 
+use std::ops::Range;
 use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::{Result, anyhow, bail};
-use typst::{Features, WorldExt};
+use typst::comemo::Track;
+use typst::diag::{At, SourceResult, Warned};
+use typst::foundations::{Array, Context, Func, NativeElement, Value};
+use typst::layout::{Frame, FrameItem, Point, Transform};
+use typst::syntax::{FileId, RootedPath, Span, SpanKind, VirtualPath, VirtualRoot};
+use typst::text::{RawContent, RawElem, TextElem};
+use typst::{Features, World, WorldExt};
 use typst_kit::fonts::FontStore;
 use typst_layout::PagedDocument;
 
+use crate::typst_emit::{TEMPLATE, Word};
 use crate::typst_world::{ExportWorld, fonts};
 
 /// Compile Typst source to PDF bytes, its relative paths (pictures)
 /// resolved against the working directory.
 pub fn compile(typ: &str) -> Result<Vec<u8>> {
-    write(&lay_out(&ExportWorld::new(typ, Features::default()))?)
+    let world = ExportWorld::new(typ, Features::default());
+    write(&checked(&world, typst::compile(&world))?)
 }
 
 /// Compile Typst source to PDF bytes, its relative paths resolved against
 /// `root`: the folder of the document it was rendered from.
 pub fn compile_in(typ: &str, root: &Path) -> Result<Vec<u8>> {
-    write(&lay_out(&ExportWorld::rooted(
-        typ,
-        Features::default(),
-        root,
-    ))?)
+    let world = ExportWorld::rooted(typ, Features::default(), root);
+    write(&checked(&world, typst::compile(&world))?)
 }
 
 /// What sets Typst source again and again: the fonts, read once when it is
@@ -64,7 +78,7 @@ impl Typesetter {
     /// Typst source as PDF bytes, its relative paths resolved against
     /// `root`, as [`compile_in`] sets it.
     pub fn pdf(&self, typ: &str, root: &Path) -> Result<Vec<u8>> {
-        write(&self.lay_out(typ, root)?)
+        write(&self.set(typ, root)?)
     }
 
     /// Typst source as one SVG document per page, its relative paths
@@ -73,7 +87,7 @@ impl Typesetter {
     /// wherever it is drawn.
     #[cfg(feature = "svg")]
     pub fn svg(&self, typ: &str, root: &Path) -> Result<Vec<String>> {
-        let document = self.lay_out(typ, root)?;
+        let document = self.set(typ, root)?;
         let opts = typst_svg::SvgOptions::default();
         Ok(document
             .pages()
@@ -82,13 +96,200 @@ impl Typesetter {
             .collect())
     }
 
-    fn lay_out(&self, typ: &str, root: &Path) -> Result<PagedDocument> {
-        lay_out(&ExportWorld::with_fonts(
-            typ,
-            Features::default(),
-            root,
-            Arc::clone(&self.fonts),
-        ))
+    /// A document rendered by [`crate::render_words`], its relative paths
+    /// resolved against `root`, laid out: the pages [`Self::pdf`] sets from
+    /// [`crate::render`]'s source, with every glyph's place in the source
+    /// the document was rendered from.
+    pub fn lay_out(&self, words: &crate::Words, root: &Path) -> Result<Layout> {
+        let world = self.world(&words.typst, root);
+        let file = source_file();
+        let values: Array = words
+            .words
+            .iter()
+            .map(|w| Value::Content(content(w, &words.blocks, file)))
+            .collect();
+        let value = Value::Array(values);
+        let set = typst::compile_with::<PagedDocument>(&world, &|engine, module| {
+            let template = module
+                .scope()
+                .get(TEMPLATE)
+                .map(|b| b.read().clone())
+                .ok_or("the source defines no template")
+                .at(Span::detached())?
+                .cast::<Func>()
+                .at(Span::detached())?;
+            Ok(template
+                .call(engine, Context::none().track(), [value.clone()])?
+                .display())
+        });
+        Ok(Layout {
+            document: checked(&world, set)?,
+            blocks: words.blocks.clone(),
+            file,
+        })
+    }
+
+    fn set(&self, typ: &str, root: &Path) -> Result<PagedDocument> {
+        let world = self.world(typ, root);
+        checked(&world, typst::compile(&world))
+    }
+
+    fn world(&self, typ: &str, root: &Path) -> ExportWorld {
+        ExportWorld::with_fonts(typ, Features::default(), root, Arc::clone(&self.fonts))
+    }
+}
+
+/// The file a word's span names: the document's own source, which Typst
+/// never reads. A span into it is a raw range used as a pair: the start is
+/// the top-level block the word is in, the end its offset from the block's
+/// start. Counted from the block, a word's span stays the same while
+/// another block is edited, and a span is part of what Typst's cache keys
+/// an element's layout by.
+fn source_file() -> FileId {
+    let vpath = VirtualPath::new("twig-source").expect("a valid virtual path");
+    RootedPath::new(VirtualRoot::Project, vpath).intern()
+}
+
+/// A word as Typst content, spanned to its place in the source: text, or
+/// code with a span for each line.
+fn content(w: &Word, blocks: &[usize], file: FileId) -> typst::foundations::Content {
+    let span = |at: usize| {
+        let block = blocks.partition_point(|&b| b <= at).saturating_sub(1);
+        let from = blocks.get(block).copied().unwrap_or(0);
+        Span::from_range(file, block..at - from)
+    };
+    let Some(code) = &w.code else {
+        return TextElem::packed(w.text.as_str()).spanned(span(w.at));
+    };
+    let lines = w
+        .text
+        .split('\n')
+        .zip(&code.lines)
+        .map(|(line, &at)| (line.into(), span(at)))
+        .collect();
+    RawElem::new(RawContent::Lines(lines))
+        .with_block(code.block)
+        .with_lang(code.lang.as_deref().map(Into::into))
+        .pack()
+        .spanned(span(w.at))
+}
+
+/// One compile of a document: its pages, and where each glyph came from.
+pub struct Layout {
+    document: PagedDocument,
+    blocks: Vec<usize>,
+    file: FileId,
+}
+
+/// A laid-out page's size and glyphs, in points from its top left.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Page {
+    pub width: f64,
+    pub height: f64,
+    pub glyphs: Vec<Glyph>,
+}
+
+/// A glyph as laid out: where it is on its page, in points from the page's
+/// top left, and the bytes of the source it was set from. `source` is
+/// `None` for what Typst draws itself (a bullet, a footnote's number, a
+/// page number) or a template's own text.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Glyph {
+    /// The left of the glyph's advance.
+    pub x: f64,
+    pub baseline: f64,
+    /// The glyph's advance.
+    pub width: f64,
+    /// The face's ascender and descender at this size, above and below the
+    /// baseline: the height a caret beside the glyph is drawn.
+    pub ascent: f64,
+    pub descent: f64,
+    /// The text the glyph draws: one character, or several for a ligature.
+    pub text: String,
+    pub source: Option<Range<usize>>,
+}
+
+impl Layout {
+    /// The pages as PDF bytes.
+    pub fn pdf(&self) -> Result<Vec<u8>> {
+        write(&self.document)
+    }
+
+    /// Each page as an SVG document, as [`Typesetter::svg`] sets it.
+    #[cfg(feature = "svg")]
+    pub fn svg(&self) -> Vec<String> {
+        let opts = typst_svg::SvgOptions::default();
+        self.document
+            .pages()
+            .iter()
+            .map(|page| typst_svg::svg(page, &opts))
+            .collect()
+    }
+
+    /// Each page's size and glyphs.
+    pub fn pages(&self) -> Vec<Page> {
+        self.document
+            .pages()
+            .iter()
+            .map(|page| {
+                let mut glyphs = Vec::new();
+                self.glyphs(&page.frame, Transform::identity(), &mut glyphs);
+                Page {
+                    width: page.frame.width().to_pt(),
+                    height: page.frame.height().to_pt(),
+                    glyphs,
+                }
+            })
+            .collect()
+    }
+
+    fn glyphs(&self, frame: &Frame, ts: Transform, out: &mut Vec<Glyph>) {
+        for (pos, item) in frame.items() {
+            match item {
+                FrameItem::Group(group) => {
+                    let ts = ts
+                        .pre_concat(Transform::translate(pos.x, pos.y))
+                        .pre_concat(group.transform);
+                    self.glyphs(&group.frame, ts, out);
+                }
+                FrameItem::Text(text) => {
+                    let size = text.size;
+                    let metrics = text.font.metrics();
+                    let scale = ts.sy.get().abs();
+                    let mut cursor = pos.x;
+                    for g in &text.glyphs {
+                        let at =
+                            Point::new(cursor + g.x_offset.at(size), pos.y - g.y_offset.at(size))
+                                .transform(ts);
+                        let width = g.x_advance.at(size).to_pt() * ts.sx.get();
+                        cursor += g.x_advance.at(size);
+                        let drawn = &text.text[g.range()];
+                        out.push(Glyph {
+                            x: at.x.to_pt(),
+                            baseline: at.y.to_pt(),
+                            width,
+                            ascent: metrics.ascender.at(size).to_pt() * scale,
+                            descent: -metrics.descender.at(size).to_pt() * scale,
+                            text: drawn.to_string(),
+                            source: self.source(g.span, drawn.len()),
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// The bytes of the source a glyph `len` bytes long came from, from its
+    /// span and its offset into the text that span names.
+    fn source(&self, (span, offset): (Span, u16), len: usize) -> Option<Range<usize>> {
+        match span.get() {
+            SpanKind::Range { id, range } if id == self.file => {
+                let start = self.blocks.get(range.start)? + range.end + offset as usize;
+                Some(start..start + len)
+            }
+            _ => None,
+        }
     }
 }
 
@@ -98,9 +299,11 @@ impl Default for Typesetter {
     }
 }
 
-fn lay_out(world: &ExportWorld) -> Result<PagedDocument> {
-    let result = typst::compile::<PagedDocument>(world);
-
+/// What a compile set, or why it could not.
+fn checked(
+    world: &ExportWorld,
+    result: Warned<SourceResult<PagedDocument>>,
+) -> Result<PagedDocument> {
     match result.output {
         Ok(doc) => Ok(doc),
         Err(errors) => {
@@ -112,7 +315,8 @@ fn lay_out(world: &ExportWorld) -> Result<PagedDocument> {
                 // Quote the offending source. Typst is pointing into markup we
                 // generated, not anything the user wrote, so the message alone
                 // is rarely enough to act on.
-                if let Some(range) = world.range(e.span)
+                if e.span.id() == Some(world.main())
+                    && let Some(range) = world.range(e.span)
                     && let Some(text) = world.main_text().get(range)
                 {
                     msg.push_str(&format!("    at: {}\n", text.trim()));
