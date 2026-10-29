@@ -29,12 +29,16 @@
 //! source as it was, so Typst's cache keeps every other block.
 
 use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
+use std::ops::Range;
+use std::sync::Arc;
 
 use crate::config::{Config, Document, weight_str};
 use crate::doc::{Doc, Idx};
 use crate::resolve::Resolved;
 use crate::style::{Align, Break, Style};
+use crate::{Hooks, Picture};
 
 /// The template function [`emit_words`] defines, and its one parameter, the
 /// words. Leading underscores keep both out of the way of a config's own
@@ -62,10 +66,53 @@ pub struct Code {
 }
 
 /// What the emitter reads beside the tree: the resolved styles, and, when
-/// it writes holes, the words it has written them for.
+/// it writes holes, the words it has written them for and what else it
+/// keeps beside them.
 struct Cx<'a> {
     res: &'a Resolved,
     words: Option<&'a RefCell<Vec<Word>>>,
+    kept: Option<&'a Kept<'a>>,
+}
+
+/// What [`emit_words`] keeps beside the words: the host's hooks, the files
+/// the source reads that are not on disk, and the objects it numbered.
+struct Kept<'a> {
+    hooks: &'a dyn Hooks,
+    files: RefCell<Vec<(String, Arc<[u8]>)>>,
+    /// Each picture's path in the source, by its destination, once.
+    paths: RefCell<HashMap<String, Option<String>>>,
+    objects: RefCell<Vec<Range<usize>>>,
+    /// The blocks a room was asked for already: a block and its first
+    /// child can start at the same byte.
+    roomed: RefCell<HashSet<usize>>,
+}
+
+/// What [`emit_words`] wrote: the source, the words, the files the source
+/// reads that are not on disk, and the bytes each object was set from.
+pub struct Emitted {
+    pub typst: String,
+    pub words: Vec<Word>,
+    pub files: Vec<(String, Arc<[u8]>)>,
+    pub objects: Vec<Range<usize>>,
+}
+
+/// The mark an object's call is written after, `n` its number: a comment,
+/// which Typst reads past, and which [`object_at`] reads back from where
+/// the call is.
+fn object_mark(n: usize) -> String {
+    format!("/*{OBJECT}{n}*/")
+}
+
+const OBJECT: &str = "twig-object:";
+
+/// The number of the object whose call starts at byte `at` of `typst`, a
+/// source [`emit_words`] wrote: the mark before the call's `#`.
+pub fn object_at(typst: &str, at: usize) -> Option<usize> {
+    let before = typst.get(..at)?;
+    let before = before.strip_suffix('#').unwrap_or(before);
+    let before = before.strip_suffix("*/")?;
+    let from = before.rfind(OBJECT)?;
+    before[from + OBJECT.len()..].parse().ok()
 }
 
 impl<'a> Cx<'a> {
@@ -148,7 +195,74 @@ impl<'a> Cx<'a> {
         Cx {
             res: self.res,
             words: None,
+            kept: None,
         }
+    }
+
+    /// What Typst reads the picture at `dest` from: as [`image_source`]
+    /// has it, or, as words, a file of the host's or the `data:` URL's,
+    /// kept beside the source. `None` for a picture there is none of.
+    fn picture(&self, dest: &str) -> Option<String> {
+        let Some(kept) = self.kept else {
+            return image_source(dest);
+        };
+        if let Some(known) = kept.paths.borrow().get(dest) {
+            return known.clone();
+        }
+        let bytes = match data_url(dest) {
+            Some(data) => data.map(|(bytes, ext)| (Arc::from(bytes), ext)),
+            None => match kept.hooks.picture(dest) {
+                Picture::AsWritten => {
+                    let src = image_source(dest);
+                    kept.paths.borrow_mut().insert(dest.to_owned(), src.clone());
+                    return src;
+                }
+                Picture::Bytes(bytes) => Some((bytes, extension(dest))),
+                Picture::Missing => None,
+            },
+        };
+        let path = bytes.map(|(bytes, ext)| {
+            let mut files = kept.files.borrow_mut();
+            let path = format!("/.twig/pictures/{}{ext}", files.len());
+            files.push((path.clone(), bytes));
+            quote(&path)
+        });
+        kept.paths
+            .borrow_mut()
+            .insert(dest.to_owned(), path.clone());
+        path
+    }
+
+    /// `call`, a Typst function call that draws node `idx` as one thing
+    /// (a picture, a room), as markup: as words, marked as an object set
+    /// from the node's bytes of the source.
+    fn object(&self, doc: &Doc, idx: Idx, call: &str) -> String {
+        match self.kept {
+            Some(kept) => {
+                let (from, to) = doc.node(idx).span;
+                let mut objects = kept.objects.borrow_mut();
+                objects.push(from..to);
+                format!("{}#{call}", object_mark(objects.len() - 1))
+            }
+            None => format!("#{call}"),
+        }
+    }
+
+    /// The room the host asked for under node `idx`, as markup, once.
+    fn room(&self, doc: &Doc, idx: Idx) -> Option<String> {
+        let kept = self.kept?;
+        let at = doc.node(idx).span.0;
+        if !kept.roomed.borrow_mut().insert(at) {
+            return None;
+        }
+        let height = kept.hooks.room(at).filter(|h| h.is_finite() && *h > 0.0)?;
+        // Filled, though with nothing to see: a shape with neither fill nor
+        // stroke is never put on the page, and the object is found there.
+        Some(self.object(
+            doc,
+            idx,
+            &format!("rect(width: 100%, height: {height}pt, fill: rgb(0, 0, 0, 0), stroke: none)"),
+        ))
     }
 }
 
@@ -209,6 +323,7 @@ pub fn emit(doc: &Doc, cfg: &Config, resolved: &Resolved) -> String {
     let cx = Cx {
         res: resolved,
         words: None,
+        kept: None,
     };
     let mut out = template_source(cfg);
     preamble(&mut out, cfg, resolved);
@@ -230,19 +345,34 @@ fn template_source(cfg: &Config) -> String {
 /// Render a document to Typst source with a hole for each run of the
 /// author's text, and the words that fill them: the source defines one
 /// function, [`TEMPLATE`], which takes the words as an array of content
-/// and is the whole document.
-pub fn emit_words(doc: &Doc, cfg: &Config, resolved: &Resolved) -> (String, Vec<Word>) {
+/// and is the whole document. `hooks` say where its pictures are, and what
+/// room to leave for the host; each picture and each room is an object,
+/// its call marked with its number ([`object_at`]).
+pub fn emit_words(doc: &Doc, cfg: &Config, resolved: &Resolved, hooks: &dyn Hooks) -> Emitted {
     let words = RefCell::new(Vec::new());
+    let kept = Kept {
+        hooks,
+        files: RefCell::default(),
+        paths: RefCell::default(),
+        objects: RefCell::default(),
+        roomed: RefCell::default(),
+    };
     let cx = Cx {
         res: resolved,
         words: Some(&words),
+        kept: Some(&kept),
     };
     let mut out = template_source(cfg);
     let _ = writeln!(out, "#let {TEMPLATE}({WORDS}) = [");
     preamble(&mut out, cfg, resolved);
     body(&mut out, doc, &cx);
     out.push_str("]\n");
-    (out, words.into_inner())
+    Emitted {
+        typst: out,
+        words: words.into_inner(),
+        files: kept.files.into_inner(),
+        objects: kept.objects.into_inner(),
+    }
 }
 
 fn body(out: &mut String, doc: &Doc, cx: &Cx) {
@@ -411,6 +541,10 @@ fn emit_block(out: &mut String, doc: &Doc, cx: &Cx, idx: Idx) {
         out.push('\n');
     }
     out.push('\n');
+    if let Some(room) = cx.room(doc, idx) {
+        out.push_str(&room);
+        out.push_str("\n\n");
+    }
 
     if style.break_after == Some(Break::Page) {
         out.push_str("#pagebreak()\n");
@@ -775,12 +909,13 @@ fn emit_inline(out: &mut String, doc: &Doc, cx: &Cx, idx: Idx) {
             let mut alt = String::new();
             emit_inlines(&mut alt, doc, &cx.plain(), &n.children);
             let alt = strip_markup(&alt);
-            match image_source(dest) {
+            match cx.picture(dest) {
                 Some(src) if alt.is_empty() => {
-                    let _ = write!(inner, "#image({src})");
+                    inner.push_str(&cx.object(doc, idx, &format!("image({src})")));
                 }
                 Some(src) => {
-                    let _ = write!(inner, "#image({src}, alt: {})", quote(&alt));
+                    let call = format!("image({src}, alt: {})", quote(&alt));
+                    inner.push_str(&cx.object(doc, idx, &call));
                 }
                 // Nothing Typst can read: the alt text stands in, rather
                 // than the whole document failing to compile.
@@ -1020,22 +1155,13 @@ fn escape(s: &str) -> String {
 /// cannot read at all: a remote URL (Typst does not fetch), or a `data:`
 /// URL that does not decode.
 fn image_source(dest: &str) -> Option<String> {
-    use base64::Engine as _;
     let lower = dest.get(..8).unwrap_or(dest).to_ascii_lowercase();
     if lower.starts_with("http://") || lower.starts_with("https://") {
         return None;
     }
-    let Some(url) = dest.strip_prefix("data:") else {
-        return Some(quote(dest));
-    };
-    let (meta, data) = url.split_once(',')?;
-    let bytes = if meta.ends_with(";base64") {
-        let clean: String = data.chars().filter(|c| !c.is_whitespace()).collect();
-        base64::engine::general_purpose::STANDARD
-            .decode(clean)
-            .ok()?
-    } else {
-        percent_decode(data)?
+    let (bytes, _) = match data_url(dest) {
+        None => return Some(quote(dest)),
+        Some(data) => data?,
     };
     let mut out = String::from("bytes((");
     for (i, b) in bytes.iter().enumerate() {
@@ -1050,6 +1176,50 @@ fn image_source(dest: &str) -> Option<String> {
     }
     out.push_str("))");
     Some(out)
+}
+
+/// A `data:` URL's bytes, and the extension its type is written with
+/// (`.png`), if it names one: `None` for a destination that is no `data:`
+/// URL, `Some(None)` for one that does not decode.
+fn data_url(dest: &str) -> Option<Option<(Vec<u8>, String)>> {
+    use base64::Engine as _;
+    let url = dest.strip_prefix("data:")?;
+    let Some((meta, data)) = url.split_once(',') else {
+        return Some(None);
+    };
+    let bytes = if meta.ends_with(";base64") {
+        let clean: String = data.chars().filter(|c| !c.is_whitespace()).collect();
+        base64::engine::general_purpose::STANDARD.decode(clean).ok()
+    } else {
+        percent_decode(data)
+    };
+    let ext = match meta.split(';').next().unwrap_or_default() {
+        "image/png" => ".png",
+        "image/jpeg" | "image/jpg" => ".jpg",
+        "image/gif" => ".gif",
+        "image/webp" => ".webp",
+        "image/svg+xml" => ".svg",
+        _ => "",
+    };
+    Some(bytes.map(|b| (b, ext.to_owned())))
+}
+
+/// The extension a destination's file name ends in, as Typst reads a
+/// picture's format from it (`.png`), or none: Typst then reads it from
+/// the picture.
+fn extension(dest: &str) -> String {
+    let path = dest.split(['?', '#']).next().unwrap_or_default();
+    let name = path.rsplit('/').next().unwrap_or_default();
+    match name.rsplit_once('.') {
+        Some((stem, ext))
+            if !stem.is_empty()
+                && (1..=5).contains(&ext.len())
+                && ext.bytes().all(|b| b.is_ascii_alphanumeric()) =>
+        {
+            format!(".{}", ext.to_ascii_lowercase())
+        }
+        _ => String::new(),
+    }
 }
 
 /// A `data:` URL's percent-encoded body as bytes.

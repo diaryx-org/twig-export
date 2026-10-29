@@ -120,6 +120,8 @@ pub(crate) struct ExportWorld {
     packages: Packages,
     /// The date `datetime.today()` is, if a caller gave one.
     today: Option<Datetime>,
+    /// The files the caller handed over, read before any on disk.
+    given: HashMap<FileId, Bytes>,
     /// Every file read once, for the compile's many asks.
     files: Mutex<HashMap<FileId, FileResult<Bytes>>>,
     sources: Mutex<HashMap<FileId, FileResult<Source>>>,
@@ -161,6 +163,7 @@ impl ExportWorld {
             root: root.to_path_buf(),
             packages: Packages::default(),
             today: None,
+            given: HashMap::new(),
             files: Mutex::default(),
             sources: Mutex::default(),
         }
@@ -178,6 +181,25 @@ impl ExportWorld {
         self
     }
 
+    /// This world, reading `files` (each a path from the project's root,
+    /// and its bytes) before any file on disk: the pictures a host found
+    /// itself.
+    pub(crate) fn with_files(mut self, files: &[(String, std::sync::Arc<[u8]>)]) -> Self {
+        for (path, bytes) in files {
+            if let Ok(vpath) = VirtualPath::new(path) {
+                let id = RootedPath::new(VirtualRoot::Project, vpath).intern();
+                self.given
+                    .insert(id, Bytes::new(std::sync::Arc::clone(bytes)));
+            }
+        }
+        self
+    }
+
+    /// The generated source, whose spans the elements it calls carry.
+    pub(crate) fn main_source(&self) -> &Source {
+        &self.main
+    }
+
     /// The generated source text, for quoting the offending line in a
     /// compile-error message.
     pub(crate) fn main_text(&self) -> &str {
@@ -185,6 +207,9 @@ impl ExportWorld {
     }
 
     fn load(&self, id: FileId) -> FileResult<Bytes> {
+        if let Some(bytes) = self.given.get(&id) {
+            return Ok(bytes.clone());
+        }
         match id.root() {
             VirtualRoot::Project => confined(&self.root, id.vpath()),
             VirtualRoot::Package(spec) => self.packages.load(spec, id.vpath()),

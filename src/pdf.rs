@@ -143,7 +143,7 @@ impl Typesetter {
     /// [`crate::render`]'s source, with every glyph's place in the source
     /// the document was rendered from.
     pub fn lay_out(&self, words: &crate::Words, root: &Path) -> Result<Layout> {
-        let world = self.world(&words.typst, root);
+        let world = self.world(&words.typst, root).with_files(&words.files);
         let file = source_file();
         let values: Array = words
             .words
@@ -168,6 +168,8 @@ impl Typesetter {
             document: checked(&world, set)?,
             blocks: words.blocks.clone(),
             file,
+            main: world.main_source().clone(),
+            objects: words.objects.clone(),
         })
     }
 
@@ -209,6 +211,9 @@ impl Typesetter {
                 let mut named = 0;
                 for g in set.pages().iter().flat_map(|p| &p.glyphs) {
                     let Some(r) = &g.source else { continue };
+                    if g.text == OBJECT {
+                        continue;
+                    }
                     named += 1;
                     let byte = SAMPLE.get(r.clone()).unwrap_or_default();
                     if byte.to_lowercase() != g.text.to_lowercase() {
@@ -275,7 +280,14 @@ pub struct Layout {
     document: PagedDocument,
     blocks: Vec<usize>,
     file: FileId,
+    /// The generated source, and the bytes of the document each object
+    /// marked in it was set from ([`crate::Words::objects`]).
+    main: typst::syntax::Source,
+    objects: Vec<Range<usize>>,
 }
+
+/// The text of an object's glyph: the object replacement character.
+pub const OBJECT: &str = "\u{FFFC}";
 
 /// A laid-out page's size and glyphs, in points from its top left.
 #[derive(Clone, Debug, PartialEq)]
@@ -289,6 +301,11 @@ pub struct Page {
 /// top left, and the bytes of the source it was set from. `source` is
 /// `None` for what Typst draws itself (a bullet, a footnote's number, a
 /// page number) or a template's own text.
+///
+/// An object ([`crate::Words::objects`]: a picture, a host's room) is one
+/// glyph, [`OBJECT`], as wide as the object, its baseline the object's
+/// bottom and its ascent the object's height, set from all of the
+/// object's bytes: a caret stands on either side of it, as of a letter.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Glyph {
     /// The left of the glyph's advance.
@@ -392,9 +409,52 @@ impl Layout {
                         });
                     }
                 }
+                FrameItem::Image(_, size, span) => {
+                    self.object(*span, Point::new(pos.x, pos.y), *size, ts, out);
+                }
+                FrameItem::Shape(shape, span) => {
+                    if let typst::visualize::Geometry::Rect(size) = shape.geometry {
+                        self.object(*span, Point::new(pos.x, pos.y), size, ts, out);
+                    }
+                }
                 _ => {}
             }
         }
+    }
+
+    /// The glyph of the object drawn by the element `span` names, at `pos`,
+    /// `size` big, under `ts`, if it is one.
+    fn object(
+        &self,
+        span: Span,
+        pos: Point,
+        size: typst::layout::Size,
+        ts: Transform,
+        out: &mut Vec<Glyph>,
+    ) {
+        if self.objects.is_empty() || span.id() != Some(self.main.id()) {
+            return;
+        }
+        let Some(range) = self.main.find(span).map(|n| n.range()) else {
+            return;
+        };
+        let Some(source) = crate::typst_emit::object_at(self.main.text(), range.start)
+            .and_then(|n| self.objects.get(n))
+        else {
+            return;
+        };
+        let at = pos.transform(ts);
+        let width = size.x.to_pt() * ts.sx.get().abs();
+        let height = size.y.to_pt() * ts.sy.get().abs();
+        out.push(Glyph {
+            x: at.x.to_pt(),
+            baseline: at.y.to_pt() + height,
+            width,
+            ascent: height,
+            descent: 0.0,
+            text: OBJECT.to_owned(),
+            source: Some(source.clone()),
+        });
     }
 
     /// The bytes of the source a glyph `len` bytes long came from, from its

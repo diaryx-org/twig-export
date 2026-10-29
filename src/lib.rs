@@ -59,7 +59,9 @@ pub mod adapt;
 pub mod html;
 
 use anyhow::{Context, Result};
+use std::ops::Range;
 use std::path::Path;
+use std::sync::Arc;
 
 /// What a render produced, plus what the config did — the diagnostics are
 /// here rather than printed inline so the library stays quiet and the CLI
@@ -83,7 +85,52 @@ pub struct Words {
     /// a word's place is counted from, so that typing in one block leaves the
     /// places of the words in every other as they were.
     pub blocks: Vec<usize>,
+    /// The files the source reads that are no file on disk: the pictures a
+    /// host handed over ([`Hooks::picture`]) and those written into the
+    /// document as `data:` URLs, each at its path in the source.
+    pub files: Vec<(String, Arc<[u8]>)>,
+    /// The bytes of the source each object was set from, by its number: a
+    /// picture, or the room left under a block ([`Hooks::room`]). Set, each
+    /// is one glyph, the object replacement character, as big as the
+    /// object ([`pdf::Layout::pages`]).
+    pub objects: Vec<Range<usize>>,
 }
+
+/// A picture as a host finds it ([`Hooks::picture`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Picture {
+    /// The destination as written, a path the typesetter reads against
+    /// the document's folder.
+    AsWritten,
+    /// The picture's file, read.
+    Bytes(Arc<[u8]>),
+    /// There is none: its alt text is set in its place.
+    Missing,
+}
+
+/// What a host answers while a document is rendered as words
+/// ([`render_words_with`]), beyond the config: where its pictures are, and
+/// room it draws in itself. The defaults ask for neither.
+pub trait Hooks {
+    /// The picture at `destination`, as the document writes it. A `data:`
+    /// URL is never asked about: its picture is in it.
+    fn picture(&self, destination: &str) -> Picture {
+        let _ = destination;
+        Picture::AsWritten
+    }
+
+    /// How tall a room to leave under the block whose source starts at
+    /// byte `at`, in points, for the host to draw in: an object as wide as
+    /// the block's column and this tall, which draws nothing.
+    fn room(&self, at: usize) -> Option<f64> {
+        let _ = at;
+        None
+    }
+}
+
+/// The [`Hooks`] that ask for nothing.
+struct NoHooks;
+impl Hooks for NoHooks {}
 
 /// Opt-in syntax to parse with, named as twig names its Markdown features.
 ///
@@ -171,8 +218,24 @@ pub fn render_parsed(td: twig::Document, source: &str, cfg: &config::Config) -> 
 /// holes and handed back beside it, for [`pdf::Typesetter::lay_out`] to set
 /// as content.
 pub fn render_words(td: twig::Document, source: &str, cfg: &config::Config) -> Result<Words> {
+    render_words_with(td, source, cfg, &NoHooks)
+}
+
+/// As [`render_words`], asking `hooks` where the pictures are and what room
+/// to leave.
+pub fn render_words_with(
+    td: twig::Document,
+    source: &str,
+    cfg: &config::Config,
+    hooks: &dyn Hooks,
+) -> Result<Words> {
     let (doc, cfg, resolved, _) = prepare(td, source, cfg)?;
-    let (typst, words) = typst_emit::emit_words(&doc, &cfg, &resolved);
+    let typst_emit::Emitted {
+        typst,
+        words,
+        files,
+        objects,
+    } = typst_emit::emit_words(&doc, &cfg, &resolved, hooks);
     let blocks = doc
         .node(doc.root())
         .children
@@ -183,6 +246,8 @@ pub fn render_words(td: twig::Document, source: &str, cfg: &config::Config) -> R
         typst,
         words,
         blocks,
+        files,
+        objects,
     })
 }
 
