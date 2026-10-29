@@ -186,3 +186,46 @@ fn a_room_is_left_under_a_block_and_is_an_object() {
     assert!(at(label) < g.baseline - g.ascent);
     assert!(at(below) > g.baseline);
 }
+
+/// A `data:` URL that is no picture Typst reads is its alt text, set as
+/// words or as markup, and the document sets.
+#[test]
+fn a_data_url_typst_cannot_read_is_its_alt_text() {
+    use base64::Engine as _;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(b"BM a bitmap, not drawable");
+    let src = format!("![a bitmap](data:image/bmp;base64,{b64})\n");
+    let host = Host {
+        found: vec![],
+        rooms: vec![],
+    };
+    let layout = set(&src, &host);
+    assert!(objects(&layout).is_empty());
+    assert_eq!(text(&layout), "a bitmap");
+
+    let typst = twig_export::render(
+        &src,
+        twig_markdown::format(),
+        &Config::default(),
+        Extensions::default(),
+    )
+    .unwrap()
+    .typst;
+    assert!(!typst.contains("#image("), "{typst}");
+    Typesetter::new()
+        .pdf(&typst, Path::new("."))
+        .expect("the markup sets");
+}
+
+/// A host's bytes that are no picture Typst reads are its alt text too.
+#[test]
+fn a_hosts_picture_typst_cannot_read_is_its_alt_text() {
+    let layout = set(
+        "![broken](b.png)\n",
+        &Host {
+            found: vec![("b.png", Picture::Bytes(Arc::from(&b"garbage"[..])))],
+            rooms: vec![],
+        },
+    );
+    assert!(objects(&layout).is_empty());
+    assert_eq!(text(&layout), "broken");
+}

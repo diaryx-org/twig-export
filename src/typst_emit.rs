@@ -217,7 +217,7 @@ impl<'a> Cx<'a> {
                     kept.paths.borrow_mut().insert(dest.to_owned(), src.clone());
                     return src;
                 }
-                Picture::Bytes(bytes) => Some((bytes, extension(dest))),
+                Picture::Bytes(bytes) => drawable(&bytes).then(|| (bytes, extension(dest))),
                 Picture::Missing => None,
             },
         };
@@ -1201,7 +1201,28 @@ fn data_url(dest: &str) -> Option<Option<(Vec<u8>, String)>> {
         "image/svg+xml" => ".svg",
         _ => "",
     };
-    Some(bytes.map(|b| (b, ext.to_owned())))
+    Some(bytes.filter(|b| drawable(b)).map(|b| (b, ext.to_owned())))
+}
+
+/// Whether `bytes` read as a picture Typst draws: a PNG, JPEG, GIF or WebP
+/// by its signature, or SVG text. Typst fails the whole document on a
+/// picture it cannot read; one this refuses is set as its alt text. Only
+/// the signature is read, not the picture, so a file truncated after it
+/// still gets through.
+pub fn drawable(bytes: &[u8]) -> bool {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+        || bytes.starts_with(&[0xFF, 0xD8, 0xFF])
+        || bytes.starts_with(b"GIF87a")
+        || bytes.starts_with(b"GIF89a")
+        || (bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP"))
+    {
+        return true;
+    }
+    // SVG: text, its first element an `svg` after any prolog.
+    let head = &bytes[..bytes.len().min(4096)];
+    let head = String::from_utf8_lossy(head);
+    let head = head.trim_start_matches('\u{feff}').trim_start();
+    head.starts_with('<') && head.contains("<svg") && !head.contains('\0')
 }
 
 /// The extension a destination's file name ends in, as Typst reads a
@@ -1481,6 +1502,20 @@ fn find_footnote(doc: &Doc, label: &str) -> Option<Idx> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_picture_typst_reads_is_drawable() {
+        assert!(drawable(b"\x89PNG\r\n\x1a\n...."));
+        assert!(drawable(&[0xFF, 0xD8, 0xFF, 0xE0]));
+        assert!(drawable(b"GIF89a...."));
+        assert!(drawable(b"RIFF\0\0\0\0WEBPVP8 "));
+        assert!(drawable(
+            b"<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\"/>"
+        ));
+        assert!(!drawable(b"BM\0\0 a bitmap"));
+        assert!(!drawable(b"not a picture"));
+        assert!(!drawable(b""));
+    }
 
     #[test]
     fn escape_neutralises_typst_markup() {
