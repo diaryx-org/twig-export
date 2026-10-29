@@ -220,3 +220,50 @@ fn a_universe_template_is_adapted_from_its_starter() {
     assert!(text.contains("On 2026-10-27."), "{text}");
     assert!(text.contains("Body."), "{text}");
 }
+
+/// An installed template that draws a quote as a block of its own sets it
+/// a paragraph's space from the text around it, as the built-ins do; one
+/// that says how far a quote stands off keeps its word.
+#[test]
+fn an_installed_template_spaces_its_quotes_as_it_says() {
+    const SRC: &str = "One.\n\nTwo.\n\n> Quoted.\n";
+    let dir = scratch("packages-quote");
+    let packages = dir.join("packages");
+    let ts = Typesetter::new().with_packages(Packages::new([packages.clone()]));
+    let above = |name: &str, rule: &str| {
+        let lib = format!(
+            "#let twig-template(body, ..rest) = {{\n\
+             set par(spacing: 10pt)\n{rule}\n\
+             show quote.where(block: true): it => block(stroke: (left: 1pt), it.body)\n\
+             body\n}}\n"
+        );
+        package(&packages, name, &lib);
+        let cfg = config(&format!("@local/{name}:1.0.0"));
+        let format = twig_markdown::format();
+        let words = render_words(
+            parse(SRC, format, Extensions::default()).unwrap(),
+            SRC,
+            &cfg,
+        )
+        .unwrap();
+        let layout = ts.lay_out(&words, &dir).expect("the template sets");
+        let page = &layout.pages()[0];
+        let at = |word: &str| {
+            let at = SRC.find(word).unwrap();
+            page.glyphs
+                .iter()
+                .find(|g| g.source.as_ref().is_some_and(|r| r.start == at))
+                .unwrap()
+        };
+        // Past a paragraph's spacing: the quote's lines are set as the
+        // paragraph's are, so the rest of the step is the same.
+        (at("Quoted").baseline - at("Two").baseline) - (at("Two").baseline - at("One").baseline)
+    };
+    let plain = above("quotes", "");
+    assert!(plain.abs() < 0.5, "{plain}");
+    let own = above(
+        "spaced",
+        "show quote.where(block: true): set block(above: 30pt)",
+    );
+    assert!((own - 20.0).abs() < 0.5, "{own}");
+}

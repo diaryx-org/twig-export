@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use twig_export::config::Config;
-use twig_export::pdf::{Layout, Typesetter};
+use twig_export::pdf::{Glyph, Layout, Typesetter};
 use twig_export::templates::NAMES;
 use twig_export::{Extensions, parse, render, render_words};
 
@@ -147,5 +147,47 @@ fn every_builtin_passes_the_check_an_editor_makes() {
         let manifest = twig_export::templates::builtin(name).unwrap().manifest();
         ts.check(name, &manifest.twig().unwrap().layouts)
             .unwrap_or_else(|e| panic!("{name}: {e:#}"));
+    }
+}
+
+/// A block quote stands off the paragraphs around it by the paragraph's
+/// own spacing, give or take its template's inset, and not by the 2.4em
+/// above and 1.8em below Typst gives a quote: a template that drew its
+/// quote as a block of its own took those up, and set what looked like a
+/// blank line over it. Without a template too, and so in any template.
+#[test]
+fn a_quote_is_spaced_as_a_paragraph_is() {
+    const SRC: &str = "One.\n\nTwo.\n\n> Quoted.\n\nThree.\n";
+    let ts = Typesetter::new();
+    let configs = NAMES
+        .iter()
+        .flat_map(|name| ["paged", "reflow"].map(|layout| (*name, config(name, layout, false))))
+        .chain([("none", Config::default())]);
+    for (name, cfg) in configs {
+        let format = twig_markdown::format();
+        let words = parse(SRC, format, Extensions::default()).unwrap();
+        let set = ts
+            .lay_out(&render_words(words, SRC, &cfg).unwrap(), root())
+            .expect("the words set");
+        let page = &set.pages()[0];
+        let line = |word: &str| {
+            let at = SRC.find(word).unwrap();
+            page.glyphs
+                .iter()
+                .find(|g| g.source.as_ref().is_some_and(|r| r.start == at))
+                .unwrap_or_else(|| panic!("{name}: {word}"))
+        };
+        // From one line's foot to the next one's head.
+        let gap = |a: &Glyph, b: &Glyph| (b.baseline - b.ascent) - (a.baseline + a.descent);
+        let par = gap(line("One"), line("Two"));
+        let above = gap(line("Two"), line("Quoted"));
+        let below = gap(line("Quoted"), line("Three"));
+        for (side, g) in [("above", above), ("below", below)] {
+            assert!(
+                (g - par).abs() < 4.0,
+                "{name} {:?}: {side} {g:.1}, a paragraph's {par:.1}",
+                cfg.document.layout
+            );
+        }
     }
 }
