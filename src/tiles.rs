@@ -192,10 +192,19 @@ fn extent(item: &FrameItem, at: Point) -> (Abs, Abs) {
                 Point::new(size.x, size.y),
             ];
             let ys = corners.map(|c| (at + c.transform(g.transform)).y);
-            (
-                ys.iter().copied().fold(Abs::inf(), Abs::min),
-                ys.iter().copied().fold(-Abs::inf(), Abs::max),
-            )
+            let mut top = ys.iter().copied().fold(Abs::inf(), Abs::min);
+            let mut bottom = ys.iter().copied().fold(-Abs::inf(), Abs::max);
+            // What is drawn past the frame's edge, unclipped, is drawn too: an
+            // underline under a paragraph's last line, below its frame.
+            if g.clip.is_none() && is_translation(g.transform) {
+                let origin = at + Point::new(g.transform.tx, g.transform.ty);
+                for (pos, item) in g.frame.items() {
+                    let (t, b) = extent(item, origin + *pos);
+                    top = top.min(t);
+                    bottom = bottom.max(b);
+                }
+            }
+            (top, bottom)
         }
         FrameItem::Shape(shape, _) => {
             let b = shape.bbox(true);

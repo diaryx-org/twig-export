@@ -79,3 +79,45 @@ fn an_edit_changes_its_blocks_tile_and_a_block_moved_keeps_its_key() {
     let new = after.iter().filter(|k| !before.contains(k)).count();
     assert_eq!(new, 1, "only the new block draws anew");
 }
+
+/// An underline under a paragraph's last line is drawn below the line,
+/// outside the paragraph's frame: its tile reaches down to it.
+#[test]
+fn a_tile_holds_what_is_drawn_past_its_blocks_frame() {
+    use twig_export::config::Rule;
+    use twig_export::style::Style;
+    let ts = Typesetter::new();
+    let mut cfg = reflowed();
+    cfg.document.page_width = Some("300pt".into());
+    cfg.document.size = Some("12pt".into());
+    let underline = Style {
+        underline: Some(true),
+        ..Style::default()
+    };
+    let strike = Style {
+        strike: Some(true),
+        ..Style::default()
+    };
+    for (select, style) in [("strong", underline), ("emph", strike)] {
+        cfg.rules.push(Rule {
+            select: select.into(),
+            style,
+        });
+    }
+    let src =
+        "Plain and *struck* and marked and H*2*O and x and **html u** html s m.\n\nThe next.\n";
+    let l = set(&ts, src, &cfg);
+    let t = &l.tiles()[0];
+    let svg = l.tile_svg(t);
+    // Each line drawn (a strike, an underline) is a path moved to its place.
+    let lines: Vec<f64> = svg
+        .split("transform=\"translate(")
+        .skip(1)
+        .filter(|rest| rest.contains(")\" d=\"M 0 0h"))
+        .filter_map(|rest| rest.split([' ', ')']).nth(1)?.parse().ok())
+        .collect();
+    assert_eq!(lines.len(), 3, "{svg}");
+    for y in lines {
+        assert!(y < t.height, "a line at {y}, below the tile's {}", t.height);
+    }
+}
