@@ -163,3 +163,25 @@ fn a_data_url_picture_is_drawn_and_a_remote_one_is_its_alt_text() {
     let bytes = pdf::compile(&rendered.typst).expect("the pictures do not stop the compile");
     assert!(bytes.starts_with(b"%PDF-"));
 }
+
+/// A line break that ends a table cell — a Shift+Enter at the end of its
+/// text — is not left as `\` against the `]` that closes the cell, where it
+/// would escape the bracket and fail the document.
+#[test]
+fn a_line_break_at_the_end_of_a_cell_does_not_escape_its_bracket() {
+    let source = "| SYN | Seq: X<br> | |\n|---|---|---|\n| | | |\n";
+    let rendered = render(
+        source,
+        twig_markdown::format(),
+        &Config::default(),
+        Default::default(),
+    )
+    .unwrap();
+    assert!(
+        rendered.typst.contains("[Seq: X \\ ]"),
+        "{}",
+        rendered.typst
+    );
+    let bytes = pdf::compile(&rendered.typst).expect("a trailing line break compiles");
+    assert!(bytes.starts_with(b"%PDF-"));
+}

@@ -665,7 +665,12 @@ fn render_block_content(out: &mut String, doc: &Doc, cx: &Cx, idx: Idx, style: &
                         _ => render_mixed(&mut def, doc, cx, &gn.children),
                     }
                 }
-                let _ = writeln!(out, "/ {}: {}", term.trim(), indent_continuation(&def));
+                let _ = writeln!(
+                    out,
+                    "/ {}: {}",
+                    trim_markup(&term),
+                    indent_continuation(&def)
+                );
             }
         }
 
@@ -778,10 +783,10 @@ fn render_table(out: &mut String, doc: &Doc, cx: &Cx, idx: Idx) {
             if colspan > 1 || rowspan > 1 {
                 cells.push(format!(
                     "table.cell(colspan: {colspan}, rowspan: {rowspan})[{}]",
-                    body.trim()
+                    trim_markup(&body)
                 ));
             } else {
-                cells.push(format!("[{}]", body.trim()));
+                cells.push(format!("[{}]", trim_markup(&body)));
             }
         }
         if is_head {
@@ -801,7 +806,11 @@ fn render_table(out: &mut String, doc: &Doc, cx: &Cx, idx: Idx) {
             let mut body = String::new();
             emit_inlines(&mut body, doc, cx, &capnode.children);
             let _ = writeln!(out, "  // caption");
-            let _ = write!(out, ")\n#[\n#set align(center)\n#emph[{}]\n]", body.trim());
+            let _ = write!(
+                out,
+                ")\n#[\n#set align(center)\n#emph[{}]\n]",
+                trim_markup(&body)
+            );
             return;
         }
     }
@@ -932,7 +941,7 @@ fn emit_inline(out: &mut String, doc: &Doc, cx: &Cx, idx: Idx) {
                     for &c in &doc.node(def).children {
                         emit_block(&mut body, doc, cx, c);
                     }
-                    inner.push_str(body.trim());
+                    inner.push_str(&trim_markup(&body));
                     inner.push(']');
                 }
                 None => {
@@ -1432,6 +1441,23 @@ fn indent(s: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Markup trimmed of the whitespace around it, for a place where a closing
+/// delimiter follows directly.
+///
+/// A hard break is `\` and a newline; trimmed at the end of a table cell or a
+/// footnote it would leave `\]`, which escapes the bracket meant to close the
+/// content and fails the whole document. A space after the backslash keeps it
+/// a line break (or, after an escaped `\\`, a backslash), and Typst drops
+/// trailing space at the end of a paragraph.
+fn trim_markup(s: &str) -> String {
+    let t = s.trim();
+    if t.ends_with('\\') {
+        format!("{t} ")
+    } else {
+        t.to_string()
+    }
 }
 
 /// Indent every line but the first, so a multi-line body sits under its list
