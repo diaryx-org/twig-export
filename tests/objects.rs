@@ -229,3 +229,113 @@ fn a_hosts_picture_typst_cannot_read_is_its_alt_text() {
     assert!(objects(&layout).is_empty());
     assert_eq!(text(&layout), "broken");
 }
+
+/// A host that draws `drawing` in every room `host` asks for.
+struct Drawn {
+    host: Host,
+    drawing: &'static str,
+}
+
+impl Hooks for Drawn {
+    fn picture(&self, destination: &str) -> Picture {
+        self.host.picture(destination)
+    }
+
+    fn room(&self, at: usize) -> Option<f64> {
+        self.host.room(at)
+    }
+
+    fn room_drawing(&self, _at: usize) -> Option<Arc<[u8]>> {
+        Some(Arc::from(self.drawing.as_bytes()))
+    }
+}
+
+fn words_with(source: &str, hooks: &dyn Hooks) -> twig_export::Words {
+    let ext = Extensions {
+        directives: true,
+        ..Extensions::default()
+    };
+    let mut cfg = Config::default();
+    cfg.document.page_width = Some("300pt".into());
+    cfg.document.page_height = Some("400pt".into());
+    render_words_with(
+        parse(source, twig_markdown::format(), ext).unwrap(),
+        source,
+        &cfg,
+        hooks,
+    )
+    .unwrap()
+}
+
+/// What a host draws in a room is set there, a file beside the source,
+/// and the room is the same one object, as big as it was: the lines around
+/// it fall where they fell with the room left empty.
+#[test]
+fn a_room_the_host_draws_in_is_the_same_room() {
+    let src = "Above\n\n::card[A label]{x=\"1\"}\n\nBelow\n";
+    let at = src.find("::card").unwrap();
+    let host = || Host {
+        found: vec![],
+        rooms: vec![(at, 50.0)],
+    };
+    let empty = words_with(src, &host());
+    let drawn = words_with(
+        src,
+        &Drawn {
+            host: host(),
+            drawing: SVG,
+        },
+    );
+    assert!(empty.files.is_empty());
+    assert_eq!(
+        drawn.files.len(),
+        1,
+        "the drawing is kept beside the source"
+    );
+    assert!(drawn.typst.contains("image("), "{}", drawn.typst);
+    let lay_out = |w: &twig_export::Words| {
+        Typesetter::new()
+            .lay_out(w, Path::new("/nonexistent"))
+            .unwrap()
+    };
+    let (empty, drawn) = (lay_out(&empty), lay_out(&drawn));
+    let (e, d) = (objects(&empty), objects(&drawn));
+    assert_eq!(d.len(), 1, "{d:?}");
+    assert!((d[0].ascent - 50.0).abs() < 0.01, "{:?}", d[0]);
+    assert!(
+        (d[0].width - e[0].width).abs() < 0.01,
+        "{:?} {:?}",
+        d[0],
+        e[0]
+    );
+    let baselines = |l: &Layout| -> Vec<f64> {
+        l.pages()
+            .into_iter()
+            .flat_map(|p| p.glyphs)
+            .map(|g| g.baseline)
+            .collect()
+    };
+    assert_eq!(baselines(&empty), baselines(&drawn));
+}
+
+/// A drawing Typst cannot read leaves the room empty, and the document
+/// sets.
+#[test]
+fn a_drawing_typst_cannot_read_leaves_the_room_empty() {
+    let src = "::card{x=\"1\"}\n";
+    let words = words_with(
+        src,
+        &Drawn {
+            host: Host {
+                found: vec![],
+                rooms: vec![(0, 30.0)],
+            },
+            drawing: "BM not a picture",
+        },
+    );
+    assert!(words.files.is_empty());
+    let layout = Typesetter::new()
+        .lay_out(&words, Path::new("/nonexistent"))
+        .unwrap();
+    assert_eq!(objects(&layout).len(), 1);
+}

@@ -126,6 +126,16 @@ pub trait Hooks {
         let _ = at;
         None
     }
+
+    /// What to draw in the room under the block whose source starts at
+    /// byte `at` ([`Hooks::room`]), as a picture's file (an SVG, a PNG…),
+    /// fitted inside the room without stretching. The default draws
+    /// nothing, as for a room a host draws in itself on its screen; a host
+    /// draws in it here when there is no screen to draw on, as on paper.
+    fn room_drawing(&self, at: usize) -> Option<Arc<[u8]>> {
+        let _ = at;
+        None
+    }
 }
 
 /// The [`Hooks`] that ask for nothing.
