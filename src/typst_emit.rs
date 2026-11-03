@@ -258,11 +258,33 @@ impl<'a> Cx<'a> {
         let height = kept.hooks.room(at).filter(|h| h.is_finite() && *h > 0.0)?;
         // Filled, though with nothing to see: a shape with neither fill nor
         // stroke is never put on the page, and the object is found there.
+        // What the host draws in it is set inside, no object itself: the
+        // room is the object, as big whatever is drawn in it.
+        let drawn = self
+            .room_drawing(at)
+            .map(|path| {
+                format!(", inset: 0pt, image({path}, width: 100%, height: 100%, fit: \"contain\")")
+            })
+            .unwrap_or_default();
         Some(self.object(
             doc,
             idx,
-            &format!("rect(width: 100%, height: {height}pt, fill: rgb(0, 0, 0, 0), stroke: none)"),
+            &format!(
+                "rect(width: 100%, height: {height}pt, fill: rgb(0, 0, 0, 0), stroke: none{drawn})"
+            ),
         ))
+    }
+
+    /// What Typst reads the drawing the host asked for in the room at `at`
+    /// from ([`Hooks::room_drawing`]): a file kept beside the source.
+    /// `None` when the host draws nothing there, or nothing Typst reads.
+    fn room_drawing(&self, at: usize) -> Option<String> {
+        let kept = self.kept?;
+        let bytes = kept.hooks.room_drawing(at).filter(|b| drawable(b))?;
+        let mut files = kept.files.borrow_mut();
+        let path = format!("/.twig/rooms/{}", files.len());
+        files.push((path.clone(), bytes));
+        Some(quote(&path))
     }
 }
 
