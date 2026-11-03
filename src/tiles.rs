@@ -38,6 +38,10 @@ pub struct Tile {
     /// A hash of what it draws, relative to its top: two tiles with the same
     /// key draw the same picture.
     pub key: u128,
+    /// What it draws, for [`crate::pdf::Typesetter::tile_svg`], the one thing
+    /// that draws a tile by itself. Without `svg` nothing does, and a tile
+    /// keeps only its key.
+    #[cfg(feature = "svg")]
     pub(crate) frame: Frame,
 }
 
@@ -87,6 +91,7 @@ pub(crate) fn tiles(document: &PagedDocument, file: FileId) -> Vec<Tile> {
                 height: height.to_pt(),
                 width: width.to_pt(),
                 key,
+                #[cfg(feature = "svg")]
                 frame: tile,
             });
         }

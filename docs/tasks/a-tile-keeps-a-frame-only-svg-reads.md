@@ -2,8 +2,9 @@
 title: A tile keeps a frame only svg reads
 description: '`Tile::frame` is read only by `tile_svg`, behind the `svg` feature, so a default build warns that it is never read and `cargo clippy --all-targets -- -D warnings` fails'
 part_of: '[Tasks](/docs/tasks/tasks.md)'
-status: open
+status: done
 created: 2026-10-28
+updated: 2026-11-02
 ---
 
 # A tile keeps a frame only svg reads
@@ -42,3 +43,12 @@ depends on whether a tile's frame is meant to outlive the `svg` feature.
 
 `cargo clippy --all-targets -- -D warnings` passes with the default
 features and with `--features svg`.
+
+## Resolved
+
+8c6b521 gates the field, and the line that fills it, on `svg`. `tiles`
+still builds every tile's frame, because the key is hashed from it; a
+build without `svg` drops the frame once the key is taken. A reader that
+is not `svg`'s, such as a PNG tile, would take the `cfg` off again.
+`cargo clippy --all-targets -- -D warnings` passes with the default
+features, `--features svg`, `--no-default-features` and `--all-features`.
