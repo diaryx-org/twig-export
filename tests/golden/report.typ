@@ -82,8 +82,8 @@ Special characters that must survive escaping: 100% of \$5 — a\_b, c\*d, \#e.
   ]
 ]
 
-/ Twig: A document AST library.
-/ Fig: A config file library.
+/ #[Twig]: A document AST library.
+/ #[Fig]: A config file library.
 
 A footnote reference#footnote[The footnote body, pulled in at the reference site.].
 

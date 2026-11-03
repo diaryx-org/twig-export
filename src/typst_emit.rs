@@ -72,6 +72,9 @@ struct Cx<'a> {
     res: &'a Resolved,
     words: Option<&'a RefCell<Vec<Word>>>,
     kept: Option<&'a Kept<'a>>,
+    /// The footnotes being set, innermost last: a note that refers to
+    /// itself, or to one that refers back, is not set inside itself again.
+    notes: &'a RefCell<Vec<Idx>>,
 }
 
 /// What [`emit_words`] keeps beside the words: the host's hooks, the files
@@ -196,6 +199,7 @@ impl<'a> Cx<'a> {
             res: self.res,
             words: None,
             kept: None,
+            notes: self.notes,
         }
     }
 
@@ -320,10 +324,12 @@ const FACE_WORDS: &[&str] = &["serif", "sans-serif", "monospace", "handwritten"]
 
 /// Render a document to Typst source.
 pub fn emit(doc: &Doc, cfg: &Config, resolved: &Resolved) -> String {
+    let notes = RefCell::default();
     let cx = Cx {
         res: resolved,
         words: None,
         kept: None,
+        notes: &notes,
     };
     let mut out = template_source(cfg);
     preamble(&mut out, cfg, resolved);
@@ -357,10 +363,12 @@ pub fn emit_words(doc: &Doc, cfg: &Config, resolved: &Resolved, hooks: &dyn Hook
         objects: RefCell::default(),
         roomed: RefCell::default(),
     };
+    let notes = RefCell::default();
     let cx = Cx {
         res: resolved,
         words: Some(&words),
         kept: Some(&kept),
+        notes: &notes,
     };
     let mut out = template_source(cfg);
     let _ = writeln!(out, "#let {TEMPLATE}({WORDS}) = [");
@@ -580,7 +588,7 @@ fn render_block_content(out: &mut String, doc: &Doc, cx: &Cx, idx: Idx, style: &
         "heading" => {
             let level = n.int_field("level").unwrap_or(1).clamp(1, 6);
             let _ = write!(out, "{} ", "=".repeat(level as usize));
-            emit_inlines(out, doc, cx, &n.children);
+            out.push_str(&one_line(&inlines(doc, cx, &n.children)));
         }
 
         "para" => emit_inlines(out, doc, cx, &n.children),
@@ -665,7 +673,12 @@ fn render_block_content(out: &mut String, doc: &Doc, cx: &Cx, idx: Idx, style: &
                         _ => render_mixed(&mut def, doc, cx, &gn.children),
                     }
                 }
-                let _ = writeln!(out, "/ {}: {}", term.trim(), indent_continuation(&def));
+                let _ = writeln!(
+                    out,
+                    "/ #[{}]: {}",
+                    trim_markup(&one_line(&term)),
+                    indent_continuation(&def)
+                );
             }
         }
 
@@ -778,10 +791,10 @@ fn render_table(out: &mut String, doc: &Doc, cx: &Cx, idx: Idx) {
             if colspan > 1 || rowspan > 1 {
                 cells.push(format!(
                     "table.cell(colspan: {colspan}, rowspan: {rowspan})[{}]",
-                    body.trim()
+                    trim_markup(&body)
                 ));
             } else {
-                cells.push(format!("[{}]", body.trim()));
+                cells.push(format!("[{}]", trim_markup(&body)));
             }
         }
         if is_head {
@@ -801,7 +814,11 @@ fn render_table(out: &mut String, doc: &Doc, cx: &Cx, idx: Idx) {
             let mut body = String::new();
             emit_inlines(&mut body, doc, cx, &capnode.children);
             let _ = writeln!(out, "  // caption");
-            let _ = write!(out, ")\n#[\n#set align(center)\n#emph[{}]\n]", body.trim());
+            let _ = write!(
+                out,
+                ")\n#[\n#set align(center)\n#emph[{}]\n]",
+                trim_markup(&body)
+            );
             return;
         }
     }
@@ -857,6 +874,13 @@ fn checkbox(checked: bool) -> &'static str {
     }
 }
 
+/// Inline markup as a string of its own.
+fn inlines(doc: &Doc, cx: &Cx, kids: &[Idx]) -> String {
+    let mut out = String::new();
+    emit_inlines(&mut out, doc, cx, kids);
+    out
+}
+
 fn emit_inlines(out: &mut String, doc: &Doc, cx: &Cx, kids: &[Idx]) {
     for &k in kids {
         emit_inline(out, doc, cx, k);
@@ -890,6 +914,52 @@ fn emit_inline(out: &mut String, doc: &Doc, cx: &Cx, idx: Idx) {
             emit_inlines(&mut inner, doc, cx, &n.children);
             inner.push(']');
         }
+        "delete" | "insert" | "mark" | "superscript" | "subscript" => {
+            let call = match n.kind.as_str() {
+                "delete" => "strike",
+                "insert" => "underline",
+                "mark" => "highlight",
+                "superscript" => "super",
+                _ => "sub",
+            };
+            let _ = write!(inner, "#{call}[");
+            emit_inlines(&mut inner, doc, cx, &n.children);
+            inner.push(']');
+        }
+        "double_quoted" | "single_quoted" => {
+            let (open, close) = if n.kind.as_str() == "double_quoted" {
+                ("\u{201c}", "\u{201d}")
+            } else {
+                ("\u{2018}", "\u{2019}")
+            };
+            inner.push_str(open);
+            emit_inlines(&mut inner, doc, cx, &n.children);
+            inner.push_str(close);
+        }
+        "url" | "email" => {
+            let text = n.str_field("text").unwrap_or_default();
+            let dest = if n.kind.as_str() == "email" {
+                format!("mailto:{text}")
+            } else {
+                text.to_string()
+            };
+            let _ = write!(
+                inner,
+                "#link({})[{}]",
+                quote(&dest),
+                cx.text(doc, idx, text)
+            );
+        }
+        // Math is written in TeX, which Typst's math does not read: set as
+        // code, it is at least the author's own, where as Typst math a
+        // `\frac` would fail the document.
+        "inline_math" | "display_math" => {
+            let text = n.str_field("text").unwrap_or_default().trim_matches('\n');
+            let block = n.kind.as_str() == "display_math";
+            inner.push_str(&cx.code(doc, idx, text, None, block));
+        }
+        // Markup's own asides, never the author's text.
+        "comment" | "doctype" | "cdata" | "processing_instruction" => {}
         "verbatim" | "code" => {
             let text = n.str_field("text").unwrap_or_default();
             inner.push_str(&cx.code(doc, idx, text, None, false));
@@ -926,16 +996,20 @@ fn emit_inline(out: &mut String, doc: &Doc, cx: &Cx, idx: Idx) {
         "footnote_reference" => {
             let label = n.str_field("text").unwrap_or_default();
             match find_footnote(doc, label) {
-                Some(def) => {
+                Some(def) if !cx.notes.borrow().contains(&def) => {
                     inner.push_str("#footnote[");
                     let mut body = String::new();
+                    cx.notes.borrow_mut().push(def);
                     for &c in &doc.node(def).children {
                         emit_block(&mut body, doc, cx, c);
                     }
-                    inner.push_str(body.trim());
+                    cx.notes.borrow_mut().pop();
+                    inner.push_str(&trim_markup(&body));
                     inner.push(']');
                 }
-                None => {
+                // No such note, or one already being set: a note that
+                // refers to itself would be set inside itself forever.
+                _ => {
                     let _ = write!(inner, "#super[{}]", escape(label));
                 }
             }
@@ -951,7 +1025,11 @@ fn emit_inline(out: &mut String, doc: &Doc, cx: &Cx, idx: Idx) {
         }
         // Inline containers (a djot span, an HTML `<span>`, a `:name` text
         // directive) carry no rendering of their own — they exist so a rule
-        // can attach one.
+        // can attach one. A leaf this backend has not learned (a djot
+        // `:symbol:`, a citation) has no children: its text is all of it.
+        _ if n.children.is_empty() => {
+            inner.push_str(&cx.text(doc, idx, n.str_field("text").unwrap_or_default()))
+        }
         _ => emit_inlines(&mut inner, doc, cx, &n.children),
     }
 
@@ -1112,15 +1190,35 @@ fn wrap_block(content: &str, style: &Style, doc: &Doc, idx: Idx) -> String {
 /// later edit can put any run at the start of a line, so they are escaped
 /// unconditionally too. A `.` is escaped where another follows it, since
 /// `...` is Typst's shorthand for an ellipsis.
+///
+/// Text can follow an expression directly, as in `#emph[x](y)`, and Typst
+/// reads on into it: a `(` as a call, a `.name` as a field, a `;` as the
+/// expression's end, which it swallows. So a leading `(` or `;` is escaped,
+/// and a leading `.` before a name. And a line that starts with digits and a `.` is a numbered list
+/// item, so that `.` is escaped too, at the start and after each newline.
 fn escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 8);
     let mut chars = s.chars().peekable();
+    if matches!(chars.peek(), Some('(' | ';')) {
+        out.push('\\');
+    }
+    // How many digits the current line has started with, while it has
+    // started with nothing else.
+    let mut digits = Some(0);
     while let Some(c) = chars.next() {
-        // Not every `.`: only one before another, since `...` is Typst's
-        // shorthand for an ellipsis and the author wrote three dots.
-        if c == '.' && chars.peek() == Some(&'.') {
+        // Not every `.`: one before another, since `...` is Typst's
+        // shorthand for an ellipsis and the author wrote three dots; one
+        // before a name where the text starts; one after a line's digits.
+        let next = chars.peek().copied();
+        let field = out.is_empty() && next.is_some_and(|n| n.is_alphabetic() || n == '_');
+        if c == '.' && (next == Some('.') || field || digits.is_some_and(|n| n > 0)) {
             out.push('\\');
         }
+        digits = match c {
+            '\n' => Some(0),
+            '0'..='9' => digits.map(|n| n + 1),
+            _ => None,
+        };
         if matches!(
             c,
             '\\' | '#'
@@ -1432,6 +1530,31 @@ fn indent(s: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Markup trimmed of the whitespace around it, for a place where a closing
+/// delimiter follows directly.
+///
+/// A hard break is `\` and a newline; trimmed at the end of a table cell or a
+/// footnote it would leave `\]`, which escapes the bracket meant to close the
+/// content and fails the whole document. A space after the backslash keeps it
+/// a line break (or, after an escaped `\\`, a backslash), and Typst drops
+/// trailing space at the end of a paragraph.
+fn trim_markup(s: &str) -> String {
+    let t = s.trim();
+    if t.ends_with('\\') {
+        format!("{t} ")
+    } else {
+        t.to_string()
+    }
+}
+
+/// Markup on one line, for a place a newline would end: a heading, a term.
+/// A soft break becomes a space; a hard break, `\` and a newline, stays a
+/// line break as `\` and a space. A string writes its newlines `\n`, so
+/// none is inside one.
+fn one_line(s: &str) -> String {
+    s.replace('\n', " ")
 }
 
 /// Indent every line but the first, so a multi-line body sits under its list
