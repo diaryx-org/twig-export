@@ -1,8 +1,9 @@
 ---
 title: A number at the start of a line becomes a list item
 part_of: '[Tasks](/docs/tasks/tasks.md)'
-status: open
+status: done
 created: 2026-10-26
+updated: 2026-11-05
 ---
 
 # A number at the start of a line becomes a list item
@@ -42,3 +43,11 @@ start of a paragraph, renders as text in the `.typ` and the PDF, and a test
 in `tests/` holds it. Escaping the `.` (Typst reads `\` before ASCII
 punctuation as that punctuation) is the shape `escape` already takes for
 the other markers.
+
+## Resolved
+
+3973795 escapes the `.` that closes a run of digits starting a word, where
+whitespace or the end of the text follows. `3.14` and `v2.` stay as they
+are written, and a list the author wrote is still a list. `tests/line_start.rs`
+holds both repros, asking Typst's own parser that no list item is left and
+compiling the result.
