@@ -1133,16 +1133,29 @@ fn wrap_block(content: &str, style: &Style, doc: &Doc, idx: Idx) -> String {
 /// only list markers at the start of a line, but a paragraph reflowed by a
 /// later edit can put any run at the start of a line, so they are escaped
 /// unconditionally too. A `.` is escaped where another follows it, since
-/// `...` is Typst's shorthand for an ellipsis.
+/// `...` is Typst's shorthand for an ellipsis, and where it closes a run of
+/// digits that starts a word and whitespace or the end follows, since a line
+/// starting `2024. ` is a numbered list item.
 fn escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 8);
     let mut chars = s.chars().peekable();
+    // Whether what came before is a run of digits a line could start with:
+    // one at the start of `s` or after whitespace.
+    let mut number = false;
+    let mut boundary = true;
     while let Some(c) = chars.next() {
         // Not every `.`: only one before another, since `...` is Typst's
-        // shorthand for an ellipsis and the author wrote three dots.
-        if c == '.' && chars.peek() == Some(&'.') {
+        // shorthand for an ellipsis and the author wrote three dots; or one
+        // closing such a number before whitespace, since `2024. ` at the
+        // start of a line is a numbered list item.
+        if c == '.'
+            && (chars.peek() == Some(&'.')
+                || number && chars.peek().is_none_or(|n| n.is_whitespace()))
+        {
             out.push('\\');
         }
+        number = c.is_ascii_digit() && (number || boundary);
+        boundary = c.is_whitespace();
         if matches!(
             c,
             '\\' | '#'
@@ -1544,6 +1557,14 @@ mod tests {
         assert_eq!(escape("a*b_c#d"), "a\\*b\\_c\\#d");
         assert_eq!(escape("wait... ok."), "wait\\.\\.. ok.");
         assert_eq!(escape("100% of $5"), "100% of \\$5");
+    }
+
+    #[test]
+    fn escape_neutralises_a_number_a_line_could_start_with() {
+        assert_eq!(escape("2024. We left."), "2024\\. We left.");
+        assert_eq!(escape("in 2024."), "in 2024\\.");
+        assert_eq!(escape("pi is 3.14"), "pi is 3.14");
+        assert_eq!(escape("v2. and a2."), "v2. and a2.");
     }
 
     #[test]
