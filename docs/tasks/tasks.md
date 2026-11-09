@@ -6,6 +6,7 @@ contents:
 - '[A number at the start of a line becomes a list item](/docs/tasks/a-number-at-a-line-start-becomes-a-list.md)'
 - '[A tile keeps a frame only svg reads](/docs/tasks/a-tile-keeps-a-frame-only-svg-reads.md)'
 - '[A world keeps what only pdf reads](/docs/tasks/a-world-keeps-what-only-pdf-reads.md)'
+- '[An empty list in the frontmatter fails the export](/docs/tasks/an-empty-list-fails-the-export.md)'
 ---
 
 # Tasks
