@@ -86,6 +86,30 @@ fn a_template_on_disk_is_found_and_given_the_listed_frontmatter() {
 }
 
 #[test]
+fn an_empty_list_in_the_frontmatter_reaches_the_template_as_an_empty_array() {
+    let dir = scratch("packages-empty-list");
+    let packages = dir.join("packages");
+    package(
+        &packages,
+        "plain",
+        "#let twig-template(body, meta: (:), ..rest) = {\n\
+         let top = meta.at(\"tags\")\n\
+         let nested = meta.at(\"info\").at(\"tags\")\n\
+         [Top: #type(top) #top.len().]\n\
+         [Nested: #type(nested) #nested.len().]\n\
+         body\n}\n",
+    );
+    let ts = Typesetter::new().with_packages(Packages::new([packages]));
+    let mut cfg = config("@local/plain:1.0.0");
+    cfg.document.template_meta = Some(vec!["*".into()]);
+    let doc = "---\ntags: []\ninfo:\n  tags: []\n---\n\nBody.\n";
+    let text = text(&ts, &cfg, doc, &dir).expect("the template sets");
+    assert!(text.contains("Top: array 0."), "{text}");
+    assert!(text.contains("Nested: array 0."), "{text}");
+    assert!(text.contains("Body."), "{text}");
+}
+
+#[test]
 fn a_template_not_installed_is_not_found() {
     let dir = scratch("packages-missing");
     let ts = Typesetter::new().with_packages(Packages::new([dir.join("packages")]));

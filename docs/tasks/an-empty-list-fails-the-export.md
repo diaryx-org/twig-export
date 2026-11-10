@@ -1,7 +1,7 @@
 ---
 title: An empty list in the frontmatter fails the export
 part_of: '[Tasks](/docs/tasks/tasks.md)'
-status: open
+status: done
 created: 2026-11-09
 updated: 2026-11-09
 description: '`typst_value` writes a JSON array as `(a, b,)`, so an empty one is `(,)`, which Typst refuses; a document whose frontmatter holds `tags: []` and reaches a template through `template-meta` fails to compile'
@@ -52,3 +52,11 @@ reads its length in the template.
 
 A document with `tags: []` in its frontmatter sets under a template that
 reads `meta`, and the template sees an empty array.
+
+## Resolved
+
+`typst_value` writes an array with no items as `()`, the way it already
+writes an empty mapping as `(:)`; an array with items keeps its trailing
+comma. `an_empty_list_in_the_frontmatter_reaches_the_template_as_an_empty_array`
+in `tests/packages.rs` sets a document with `tags: []` at the top level and
+inside a mapping, and its template reads each as an array of length 0.

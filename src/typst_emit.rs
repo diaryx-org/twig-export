@@ -1308,6 +1308,10 @@ fn typst_value(v: &serde_json::Value) -> String {
             None => n.as_f64().map_or("none".into(), |f| format!("{f:?}")),
         },
         Json::String(s) => quote(s),
+        // `()` is the empty array; `(,)` is not Typst.
+        Json::Array(items) if items.is_empty() => "()".into(),
+        // The trailing comma keeps one item from reading as parentheses
+        // around a value.
         Json::Array(items) => {
             let items: Vec<String> = items.iter().map(typst_value).collect();
             format!("({},)", items.join(", "))
