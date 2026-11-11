@@ -42,6 +42,7 @@ pub struct Packages {
 
 impl Packages {
     /// The built-in templates, and the packages in each of `dirs`.
+    #[cfg(feature = "pdf")]
     pub fn new(dirs: impl IntoIterator<Item = PathBuf>) -> Self {
         Packages {
             dirs: dirs.into_iter().collect(),
@@ -49,6 +50,7 @@ impl Packages {
     }
 
     /// The folders searched, in order.
+    #[cfg(feature = "pdf")]
     pub fn dirs(&self) -> &[PathBuf] {
         &self.dirs
     }
@@ -170,12 +172,14 @@ impl ExportWorld {
     }
 
     /// This world, finding packages in `packages`.
+    #[cfg(feature = "pdf")]
     pub(crate) fn with_packages(mut self, packages: Packages) -> Self {
         self.packages = packages;
         self
     }
 
     /// This world, its `datetime.today()` `today`.
+    #[cfg(feature = "pdf")]
     pub(crate) fn with_today(mut self, today: Option<Datetime>) -> Self {
         self.today = today;
         self
@@ -184,6 +188,7 @@ impl ExportWorld {
     /// This world, reading `files` (each a path from the project's root,
     /// and its bytes) before any file on disk: the pictures a host found
     /// itself.
+    #[cfg(feature = "pdf")]
     pub(crate) fn with_files(mut self, files: &[(String, std::sync::Arc<[u8]>)]) -> Self {
         for (path, bytes) in files {
             if let Ok(vpath) = VirtualPath::new(path) {
@@ -196,6 +201,7 @@ impl ExportWorld {
     }
 
     /// The generated source, whose spans the elements it calls carry.
+    #[cfg(feature = "pdf")]
     pub(crate) fn main_source(&self) -> &Source {
         &self.main
     }
