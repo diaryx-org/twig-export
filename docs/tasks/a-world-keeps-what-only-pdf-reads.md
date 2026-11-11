@@ -1,9 +1,9 @@
 ---
 title: A world keeps what only pdf reads
 part_of: '[Tasks](/docs/tasks/tasks.md)'
-status: open
+status: done
 created: 2026-11-09
-updated: 2026-11-09
+updated: 2026-11-10
 description: '`Packages::new`, `Packages::dirs` and four `ExportWorld` builders in `src/typst_world.rs` are used only by the `pdf` path, so a build with `html` and without `pdf` warns that they are never used and `cargo clippy --all-targets --no-default-features --features html -- -D warnings` fails'
 ---
 
@@ -60,3 +60,15 @@ to resolve packages and pictures as the PDF backend does.
 `cargo clippy --all-targets -- -D warnings` passes with
 `--no-default-features --features html`, as well as with the default
 features, `--no-default-features`, `--features svg` and `--all-features`.
+
+## Resolved
+
+The six items are gated on `pdf`, as 8c6b521 gated `Tile::frame` on
+`svg`. Nothing changes for a build with `pdf`; one with `html` alone
+compiles them out. `Packages` reaches callers only through `pdf`'s
+re-export, so no public item goes away. `html::compile` still takes no
+package folders, no `today` and no host-found files; a backend that
+should, takes the `cfg` off the ones it reads.
+`cargo clippy --all-targets -- -D warnings` passes with the default
+features, `--no-default-features`, `--no-default-features --features html`,
+`--features html`, `--features svg` and `--all-features`.
